@@ -1,0 +1,6 @@
+*.orig
+*.pyc
+*.sublime-*
+/env.sh
+/venv
+__pycache__

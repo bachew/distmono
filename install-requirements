@@ -1,0 +1,16 @@
+#!/bin/bash
+
+set -ex
+
+pip install -U pip
+pip install -U wheel
+
+pip install -r <(echo "
+attrs
+awscli
+boto3
+click
+pytest
+stacker
+stacker_blueprints
+")
