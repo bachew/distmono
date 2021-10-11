@@ -58,5 +58,4 @@ def cli_deploy():
     })
 
 
-
 cli(prog_name='dmn')

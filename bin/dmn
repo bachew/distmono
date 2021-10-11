@@ -1,0 +1,51 @@
+#!/bin/bash
+
+set -e
+
+python_execs="python python3 python3.9 python3.8 python3.7 python3.6"  # in case python3 is not >= min_python_version
+min_python_version="(3, 6)"  # python tuple
+python="python3"
+
+set_python() {
+    for python_exec in $python_execs; do
+        if ! command -v $python_exec > /dev/null; then
+            continue
+        fi
+        if $python_exec -c "import sys; exit(0 if $min_python_version <= sys.version_info else 1)"; then
+            python="$python_exec"
+            return
+        fi
+    done
+
+    echo "Unable to find Python >= $min_python_version"
+    exit 1
+}
+
+set_python
+
+script_path=$(readlink -e "$BASH_SOURCE")
+repo_dir=$(dirname $(dirname "$script_path"))
+env_sh_path="$repo_dir/env.sh"
+
+if [ -e "$env_sh_path" ]; then
+    source "$env_sh_path"
+fi
+
+venv_dir="$repo_dir/venv"
+
+if [ ! -e "$venv_dir" ]; then
+    echo "Creating virtual environment"
+    "$python" -m venv "$venv_dir"
+fi
+
+source "$venv_dir/bin/activate"
+
+if ! cmp -s "$repo_dir/install-requirements" "$venv_dir/install-requirements"; then
+    echo "Requirements changed, installing..."
+    "$repo_dir/install-requirements"
+    cp "$repo_dir/install-requirements" "$venv_dir"
+fi
+
+export PATH="$venv_dir/bin:$PATH"
+export PYTHONPATH="$repo_dir"
+"$venv_dir/bin/python" -m distmono "$@"
