@@ -5,7 +5,7 @@ import attr
 
 @attr.s(kw_only=True)
 class Stacker:
-    build_tool = attr.ib()
+    project = attr.ib()
     region = attr.ib()
     recreate_failed = attr.ib(default=True)
     dump = attr.ib(default=False)
@@ -62,7 +62,7 @@ class Stacker:
 
     @cached_property
     def temp_dir(self):
-        return self.build_tool.temp_dir / 'stacker'
+        return self.project.temp_dir / 'stacker'
 
     @cached_property
     def generated_dir(self):

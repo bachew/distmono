@@ -1,16 +1,16 @@
-from distmono.core import BuildTool
+from distmono.core import load_project_config
 from pathlib import Path
 import click
 import subprocess
 
 
-base_dir = Path(__file__).parents[1]
-build_tool = BuildTool(base_dir=base_dir)
-
-
 @click.group()
-def cli():
-    pass
+@click.option('-c', '--config', 'config_file',
+              required=True,
+              help='Project config file (e.g. config/ci.py)')
+@click.pass_context
+def cli(ctx, config_file):
+    ctx.obj = load_project_config(config_file)
 
 
 @cli.command('run', context_settings=dict(
@@ -42,11 +42,21 @@ def cli_run(ctx, command):
 
 
 @cli.command('build')
-def cli_build():
+@click.pass_obj
+def cli_build(project):
+    # TODO
+    print(project)
+
+
+@cli.command('build-buckets')
+def cli_build_buckets():
+    from distmono.core import Project
     from distmono.stacker import Stacker, Stack, Config
     from stacker_blueprints.s3 import Buckets
 
-    stacker = Stacker(build_tool=build_tool, region='ap-southeast-1')
+    project_dir = Path(__file__).parents[1]
+    project = Project(project_dir=project_dir)
+    stacker = Stacker(project=project, region='ap-southeast-1')
     stacks = [
         Stack(name='buckets', blueprint=Buckets, variables={
             'Buckets': {
