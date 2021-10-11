@@ -1,5 +1,8 @@
+*.orig
 *.pyc
-__pycache__
 *.sublime-*
+.pytest_cache
 /env.sh
+/tmp
 /venv
+__pycache__

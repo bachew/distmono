@@ -10,5 +10,8 @@ attrs
 awscli
 boto3
 click
+pytest
+pyyaml
 stacker
+stacker_blueprints
 ")
