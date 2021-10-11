@@ -40,10 +40,10 @@ fi
 
 source "$venv_dir/bin/activate"
 
-if ! cmp -s "$repo_dir/install-requirements" "$venv_dir/install-requirements"; then
+if ! cmp -s "$repo_dir/requirements" "$venv_dir/requirements"; then
     echo "Requirements changed, installing..."
-    "$repo_dir/install-requirements"
-    cp "$repo_dir/install-requirements" "$venv_dir"
+    bash "$repo_dir/requirements"
+    cp "$repo_dir/requirements" "$venv_dir"
 fi
 
 export PATH="$venv_dir/bin:$PATH"

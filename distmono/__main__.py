@@ -1,5 +1,11 @@
+from distmono.core import BuildTool
+from pathlib import Path
 import click
 import subprocess
+
+
+base_dir = Path(__file__).parents[1]
+build_tool = BuildTool(base_dir=base_dir)
 
 
 @click.group()
@@ -35,24 +41,22 @@ def cli_run(ctx, command):
         raise SystemExit(res.returncode)
 
 
-@cli.command('deploy')
-def cli_deploy():
+@cli.command('build')
+def cli_build():
     from distmono.stacker import Stacker, Stack, Config
     from stacker_blueprints.s3 import Buckets
-    from troposphere.s3 import Bucket, PublicRead
 
-    stacker = Stacker(region='eu-west-1')
+    stacker = Stacker(build_tool=build_tool, region='ap-southeast-1')
     stacks = [
         Stack(name='buckets', blueprint=Buckets, variables={
             'Buckets': {
-                'MiscBucket': Bucket(
-                    'MiscBucket',
-                    AccessControl=PublicRead,
-                )
+                'MiscBucket': {
+                    'BucketName': '${namespace}-misc',
+                }
             }
         }),
     ]
-    config = Config(stacks=stacks)
+    config = Config(namespace='distmono', stacks=stacks)
     stacker.build(config, {
         'namespace': 'distmono'
     })
