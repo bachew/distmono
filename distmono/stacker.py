@@ -9,7 +9,6 @@ class Stacker:
     project = attr.ib()
     region = attr.ib()
     recreate_failed = attr.ib(default=True)
-    dump = attr.ib(default=False)
 
     def build(self, config, env):
         cmd = ['stacker', 'build', '-r', self.region]
@@ -22,11 +21,6 @@ class Stacker:
         with sh.chdir(temp_dir):
             cmd.append(env_file.relative_to(temp_dir))
             cmd.append(config_file.relative_to(temp_dir))
-
-            if self.dump:
-                sh.run(cmd + ['--dump', '.'])
-                sh.run(['mv', 'stack_templates', 'dump'])  # stack_templates is confusing
-
             sh.run(cmd)
 
     def destroy(self, config, env):
@@ -43,11 +37,31 @@ class Stacker:
         temp_dir = self.temp_dir / config.namespace
         sh.run(['rm', '-rf', str(temp_dir)])
         temp_dir.mkdir(parents=True, exist_ok=True)
-        config_file = temp_dir / 'config.yaml'
-        config_file.write_text(self._to_yaml(config.to_dict()))
-        env_file = temp_dir / 'env.yaml'
+        config_file = temp_dir / 'stacker-config.yaml'
+        config_file.write_text(self.get_config_yaml(config, temp_dir))
+        env_file = temp_dir / 'stacker-env.yaml'
         env_file.write_text(self._to_yaml(env))
         return temp_dir, config_file, env_file
+
+    def get_config_yaml(self, config, temp_dir):
+        stacks = [self.get_stack_yaml_obj(s, temp_dir) for s in config.stacks]
+        config = {
+            'namespace': config.namespace,
+            'stacker_bucket': config.stacker_bucket,
+            'stacks': stacks,
+            'tags': config.tags,
+        }
+        return self._to_yaml(config)
+
+    def get_stack_yaml_obj(self, stack, temp_dir):
+        template_file = temp_dir / f'cfn-{stack.name}.yaml'
+        template_file.write_text(stack.template.to_yaml())
+        return {
+            'name': stack.name,
+            'template_path': str(template_file.relative_to(temp_dir)),
+            'variables': stack.variables,
+            'tags': stack.tags,
+        }
 
     def validate_namespace(self, config, env):
         ns = 'namespace'
@@ -70,7 +84,7 @@ class Stacker:
         return self.temp_dir / 'generated'
 
     def _to_yaml(self, obj):
-        import yaml  # lazy import
+        import yaml  # lazy import, to speed up CLI
         return yaml.dump(obj)
 
 
@@ -78,43 +92,43 @@ class Stacker:
 class Config:
     namespace = attr.ib()
     stacker_bucket = attr.ib(default='')
-    # TODO: sys_path
     stacks = attr.ib(default=attr.Factory(list))
     tags = attr.ib(default=attr.Factory(dict))
 
-    def to_dict(self):
-        stacks = [s.to_config_dict() for s in self.stacks]
-        return {
-            'namespace': self.namespace,
-            'stacker_bucket': self.stacker_bucket,
-            # TODO: sys_path
-            'stacks': stacks,
-            'tags': self.tags,
-        }
+    # def to_dict(self):
+    #     stacks = [s.to_config_dict() for s in self.stacks]
+    #     return {
+    #         'namespace': self.namespace,
+    #         'stacker_bucket': self.stacker_bucket,
+    #         'stacks': stacks,
+    #         'tags': self.tags,
+    #     }
 
 
 @attr.s(kw_only=True)
 class Stack:
     name = attr.ib()
-    blueprint = attr.ib()
+    # blueprint = attr.ib()
+    template = attr.ib()  # TODO: validator
     variables = attr.ib(default=attr.Factory(dict))
     tags = attr.ib(default=attr.Factory(dict))
 
-    def to_config_dict(self):
-        cls = self.blueprint
-        class_path = f'{cls.__module__}.{cls.__name__}'
-        return {
-            'name': self.name,
-            'class_path': class_path,
-            'variables': self.variables,
-            'tags': self.tags,
-        }
+    # def to_config_dict(self):
+    #     cls = self.blueprint
+    #     class_path = f'{cls.__module__}.{cls.__name__}'
+    #     return {
+    #         'name': self.name,
+    #         'class_path': class_path,
+    #         'variables': self.variables,
+    #         'tags': self.tags,
+    #     }
 
 
 class StackerDpl(Deployable):
     def build(self):
         stacker = self.get_stacker()
         stacker.build(self.get_stacker_config(), self.context.config)
+        # TODO: return output
 
     def destroy(self):
         stacker = self.get_stacker()

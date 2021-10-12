@@ -9,7 +9,7 @@ import runpy
 class Project:
     def __init__(self, *, project_dir, config=None):
         self.project_dir = Path(project_dir)
-        self.config = config
+        self.config = config  # TODO: rename this to env to avoid confusion with stacker env
 
     @property
     def config(self):
@@ -17,7 +17,7 @@ class Project:
 
     @config.setter
     def config(self, config):
-        # TODO: schema and validation
+        # TODO: schema and validation, namespace and region are required
         self._config = config
 
     def get_deployables(self):
