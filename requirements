@@ -10,6 +10,7 @@ attrs
 awscli
 boto3
 click
+marshmallow
 networkx
 pytest
 pyyaml

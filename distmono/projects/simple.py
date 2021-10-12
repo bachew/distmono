@@ -49,7 +49,7 @@ class BucketsDpl(StackerDpl):
     @cached_property
     def misc_bucket(self):
         ctx = self.context
-        return s3.Bucket('Misc', BucketName='{namespace}-misc'.format(**ctx.config))
+        return s3.Bucket('Misc', BucketName='{namespace}-misc'.format(**ctx.env))
 
 
 # TODO

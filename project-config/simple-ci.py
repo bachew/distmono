@@ -5,11 +5,11 @@ from pathlib import Path
 def get_project():
     return SimpleProject(
         project_dir=Path(__file__).parents[1],
-        config=get_config())
+        env=get_env())
 
 
-def get_config():
+def get_env():
     return {
         'namespace': 'distmono-simple',
-        'region': 'ap-southeast-1'
+        'region': 'ap-southeast-1',
     }

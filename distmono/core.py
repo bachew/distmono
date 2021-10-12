@@ -7,18 +7,34 @@ import runpy
 
 
 class Project:
-    def __init__(self, *, project_dir, config=None):
+    def __init__(self, *, project_dir, env=None):
         self.project_dir = Path(project_dir)
-        self.config = config  # TODO: rename this to env to avoid confusion with stacker env
+        self.env = env
 
     @property
-    def config(self):
-        return self._config
+    def env(self):
+        return self._env
 
-    @config.setter
-    def config(self, config):
-        # TODO: schema and validation, namespace and region are required
-        self._config = config
+    @env.setter
+    def env(self, env):
+        from marshmallow.exceptions import ValidationError  # slow import
+
+        schema_cls = self.get_env_schema_cls()
+        schema = schema_cls()
+
+        try:
+            self._env = schema.load(env)
+        except ValidationError as e:
+            raise ConfigError(f'Invalid env: {e}')
+
+    def get_env_schema_cls(self):
+        from marshmallow import Schema, fields  # slow import
+
+        class EnvSchema(Schema):
+            namespace = fields.Str(required=True)
+            region = fields.Str(required=True)
+
+        return EnvSchema
 
     def get_deployables(self):
         raise NotImplementedError
@@ -46,8 +62,8 @@ class Project:
         return None
 
     def create_context(self):
-        config = deepcopy(self.config)
-        return Context(project=self, config=config)
+        env = deepcopy(self.env)
+        return Context(project=self, env=env)
 
 
 class Deployable:
@@ -139,7 +155,7 @@ class Destroyer(Deployer):
 @attr.s(kw_only=True)
 class Context:
     project = attr.ib()
-    config = attr.ib()
+    env = attr.ib()
 
 
 class DeploymentGraph:

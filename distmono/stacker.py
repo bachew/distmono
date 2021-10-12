@@ -107,12 +107,12 @@ class Stack:
 class StackerDpl(Deployable):
     def build(self):
         stacker = self.get_stacker()
-        stacker.build(self.get_stacker_config(), self.context.config)
+        stacker.build(self.get_stacker_config(), self.context.env)
         # TODO: return output of all stacks
 
     def destroy(self):
         stacker = self.get_stacker()
-        stacker.destroy(self.get_stacker_config(), self.context.config)
+        stacker.destroy(self.get_stacker_config(), self.context.env)
 
     def get_stacker(self):
         return Stacker(project=self.context.project, region=self.get_region())
@@ -124,7 +124,7 @@ class StackerDpl(Deployable):
         raise NotImplementedError()
 
     def get_namespace(self):
-        return self.context.project.config['namespace']
+        return self.context.env['namespace']
 
     def get_region(self):
-        return self.context.config['region']
+        return self.context.env['region']
