@@ -1,16 +1,15 @@
-from distmono.core import load_project_config
-from pathlib import Path
+from distmono.core import load_project
 import click
 import subprocess
 
 
 @click.group()
-@click.option('-c', '--config', 'config_file',
+@click.option('-p', '--project-config', 'file',
               required=True,
-              help='Project config file (e.g. config/ci.py)')
+              help='Project and config file (e.g. project-config/simple-ci.py)')
 @click.pass_context
-def cli(ctx, config_file):
-    ctx.obj = load_project_config(config_file)
+def cli(ctx, file):
+    ctx.obj = load_project(file)
 
 
 @cli.command('run', context_settings=dict(
@@ -44,32 +43,13 @@ def cli_run(ctx, command):
 @cli.command('build')
 @click.pass_obj
 def cli_build(project):
-    # TODO
-    print(project)
+    project.build()
 
 
-@cli.command('build-buckets')
-def cli_build_buckets():
-    from distmono.core import Project
-    from distmono.stacker import Stacker, Stack, Config
-    from stacker_blueprints.s3 import Buckets
-
-    project_dir = Path(__file__).parents[1]
-    project = Project(project_dir=project_dir)
-    stacker = Stacker(project=project, region='ap-southeast-1')
-    stacks = [
-        Stack(name='buckets', blueprint=Buckets, variables={
-            'Buckets': {
-                'MiscBucket': {
-                    'BucketName': '${namespace}-misc',
-                }
-            }
-        }),
-    ]
-    config = Config(namespace='distmono', stacks=stacks)
-    stacker.build(config, {
-        'namespace': 'distmono'
-    })
+@cli.command('destroy')
+@click.pass_obj
+def cli_destroy(project):
+    project.destroy()
 
 
 cli(prog_name='dmn')

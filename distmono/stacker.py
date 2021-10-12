@@ -1,3 +1,4 @@
+from distmono.core import Deployable
 from distmono.util import sh
 from functools import cached_property
 import attr
@@ -108,3 +109,28 @@ class Stack:
             'variables': self.variables,
             'tags': self.tags,
         }
+
+
+class StackerDpl(Deployable):
+    def build(self):
+        stacker = self.get_stacker()
+        stacker.build(self.get_stacker_config(), self.context.config)
+
+    def destroy(self):
+        stacker = self.get_stacker()
+        stacker.destroy(self.get_stacker_config(), self.context.config)
+
+    def get_stacker(self):
+        return Stacker(project=self.context.project, region=self.get_region())
+
+    def get_stacker_config(self):
+        return Config(namespace=self.get_namespace(), stacks=self.get_stacks())
+
+    def get_stacks(self):
+        raise NotImplementedError()
+
+    def get_namespace(self):
+        return self.context.project.config['namespace']
+
+    def get_region(self):
+        return self.context.config['region']

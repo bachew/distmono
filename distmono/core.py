@@ -1,3 +1,4 @@
+from copy import deepcopy
 from distmono.exceptions import ConfigError
 from functools import cached_property
 from pathlib import Path
@@ -5,58 +6,76 @@ import attr
 import runpy
 
 
-@attr.s(kw_only=True)
 class Project:
-    project_dir = attr.ib()
-    components = attr.ib(default=attr.Factory(list))
+    def __init__(self, *, project_dir, config=None):
+        self.project_dir = Path(project_dir)
+        self.config = config
+
+    @property
+    def config(self):
+        return self._config
+
+    @config.setter
+    def config(self, config):
+        # TODO: schema and validation
+        self._config = config
+
+    def get_deployables(self):
+        return {}
 
     @cached_property
     def temp_dir(self):
         return Path(self.project_dir) / 'tmp'
 
-    def compile(self):
-        pass
+    def build(self, dpl_names=None):
+        dpls = self.get_deployables()
 
-    def clean(self):
-        pass
+        if not dpl_names:
+            dpl_names = dpls.keys()
+
+        # TODO: dependency
+        for dpl_name in dpl_names:
+            ctx = self.create_context()
+            dpl_cls = dpls[dpl_name]
+            dpl = dpl_cls(ctx)
+            dpl.build()
+
+    def create_context(self):
+        config = deepcopy(self.config)
+        return Context(project=self, config=config)
+
+    def destroy(self, dpl_names=None):
+        pass  # TODO
+
+
+class Deployable:
+    def __init__(self, context):
+        self.context = context
 
     def build(self):
-        pass
+        return {}
 
     def destroy(self):
         pass
 
 
 @attr.s(kw_only=True)
-class Component:
-    name = attr.ib()
-    component_dir = attr.ib()
-    dependencies = attr.ib(default=attr.Factory(list))
-
-    def compile(self, input):
-        return {}
-
-    def clean(self, input):
-        pass
-
-    def build(self, input):
-        return {}
-
-    def destroy(self, input):
-        pass
+class Context:
+    project = attr.ib()
+    config = attr.ib()
 
 
-def load_project_config(config_file):
-    mod = runpy.run_path(config_file)
+def load_project(filename):
+    mod = runpy.run_path(filename)
     func = mod.get('get_project')
-    config_file = str(config_file)
+    filename = str(filename)
 
     if not callable(func):
-        raise ConfigError(f'Missing get_project() in {config_file!r}')
+        raise ConfigError(f'Missing get_project() in {filename!r}')
 
     obj = func()
 
     if not isinstance(obj, Project):
-        raise ConfigError(f'get_project() from {config_file!r} did not return Project instance')
+        raise ConfigError(f'get_project() from {filename!r} did not return Project instance')
 
     return obj

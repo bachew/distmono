@@ -1,14 +1,14 @@
-from distmono.core import load_project_config, Project
+from distmono.core import load_project, Project
 from distmono.exceptions import ConfigError
 from textwrap import dedent
 import pytest
 
 
-class TestLoadProjectConfig:
+class TestLoadProject:
     def load(self, tmp_path, text):
-        config_file = tmp_path / 'config.py'
-        config_file.write_text(text)
-        project = load_project_config(config_file)
+        project_file = tmp_path / 'config.py'
+        project_file.write_text(text)
+        project = load_project(project_file)
         assert isinstance(project, Project)
 
     def test_valid_config(self, tmp_path):
