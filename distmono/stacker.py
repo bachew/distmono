@@ -95,40 +95,20 @@ class Config:
     stacks = attr.ib(default=attr.Factory(list))
     tags = attr.ib(default=attr.Factory(dict))
 
-    # def to_dict(self):
-    #     stacks = [s.to_config_dict() for s in self.stacks]
-    #     return {
-    #         'namespace': self.namespace,
-    #         'stacker_bucket': self.stacker_bucket,
-    #         'stacks': stacks,
-    #         'tags': self.tags,
-    #     }
-
 
 @attr.s(kw_only=True)
 class Stack:
     name = attr.ib()
-    # blueprint = attr.ib()
     template = attr.ib()  # TODO: validator
     variables = attr.ib(default=attr.Factory(dict))
     tags = attr.ib(default=attr.Factory(dict))
-
-    # def to_config_dict(self):
-    #     cls = self.blueprint
-    #     class_path = f'{cls.__module__}.{cls.__name__}'
-    #     return {
-    #         'name': self.name,
-    #         'class_path': class_path,
-    #         'variables': self.variables,
-    #         'tags': self.tags,
-    #     }
 
 
 class StackerDpl(Deployable):
     def build(self):
         stacker = self.get_stacker()
         stacker.build(self.get_stacker_config(), self.context.config)
-        # TODO: return output
+        # TODO: return output of all stacks
 
     def destroy(self):
         stacker = self.get_stacker()

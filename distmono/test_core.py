@@ -1,5 +1,5 @@
-from distmono.core import load_project, Project
-from distmono.exceptions import ConfigError
+from distmono.core import DeploymentGraph, load_project, Project
+from distmono.exceptions import CircularDependencyError, ConfigError
 from textwrap import dedent
 import pytest
 
@@ -46,3 +46,59 @@ class TestLoadProject:
                 def get_project():
                     return {}
             '''))
+
+
+class TestDeploymentGraph:
+    def graph(self, nodes, edges):
+        return DeploymentGraph(nodes, edges)
+
+    def test_simple(self):
+        g = self.graph(['a', 'b', 'c'], {
+            'a': 'b',
+            'b': 'c',
+        })
+        assert g.nodes == ['a', 'b', 'c']
+        assert g.edges == [('a', 'b'), ('b', 'c')]
+        assert g.sort() == ['a', 'b', 'c']
+
+    def test_cycles(self):
+        msg = r'Circular dependency found: .*-\>.*-\>'
+
+        with pytest.raises(CircularDependencyError, match=msg):
+            self.graph(['a', 'b', 'c'], {
+                'a': 'b',
+                'b': 'c',
+                'c': 'a',
+            })
+
+    def test_dependencies(self):
+        g = self.graph(['s3_bucket', 'code', 'lambda1', 'lambda2', 'lambdas'], {
+            'code': 's3_bucket',
+            'lambda1': 'code',
+            'lambda2': 'code',
+            'lambdas': ['lambda1', 'lambda2'],
+        })
+        assert g.successors('lambdas') == ['lambda1', 'lambda2']
+        assert g.successors('lambda1') == ['code']
+        assert g.successors('code') == ['s3_bucket']
+        assert g.successors('s3_bucket') == []
+
+        assert g.predecessors('s3_bucket') == ['code']
+        assert g.predecessors('code') == ['lambda1', 'lambda2']
+        assert g.predecessors('lambda2') == ['lambdas']
+        assert g.predecessors('lambdas') == []
+
+    def test_invalid_edge(self):
+        msg = r"Invalid target 'x', must be one of \['d',.*"
+
+        with pytest.raises(ValueError, match=msg):
+            self.graph(['d', 'e', 'f'], {'d': 'e', 'x': 'f'})
+
+    def test_invalid_node(self):
+        g = self.graph(['x', 'y', 'z'], {})
+
+        with pytest.raises(ValueError, match=r"Invalid target 'u',"):
+            g.successors('u')
+
+        with pytest.raises(ValueError, match=r"Invalid target 'v',"):
+            g.predecessors('v')

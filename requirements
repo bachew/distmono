@@ -10,6 +10,7 @@ attrs
 awscli
 boto3
 click
+networkx
 pytest
 pyyaml
 stacker

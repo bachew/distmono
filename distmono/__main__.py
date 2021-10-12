@@ -41,15 +41,17 @@ def cli_run(ctx, command):
 
 
 @cli.command('build')
+@click.argument('target', required=False)
 @click.pass_obj
-def cli_build(project):
-    project.build()
+def cli_build(project, target):
+    project.build(target)
 
 
 @cli.command('destroy')
+@click.argument('target', required=False)
 @click.pass_obj
-def cli_destroy(project):
-    project.destroy()
+def cli_destroy(project, target):
+    project.destroy(target)
 
 
 cli(prog_name='dmn')

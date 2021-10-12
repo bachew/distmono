@@ -4,3 +4,7 @@ class DistmonoError(Exception):
 
 class ConfigError(DistmonoError):
     pass
+
+
+class CircularDependencyError(Exception):
+    pass
