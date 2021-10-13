@@ -4,9 +4,9 @@ import subprocess
 
 
 @click.group()
-@click.option('-p', '--project-config', 'file',
+@click.option('-p', '--project-env', 'file',
               required=True,
-              help='Project and config file (e.g. project-config/simple-ci.py)')
+              help='Project and env file (e.g. project-env/simple-ci.py)')
 @click.pass_context
 def cli(ctx, file):
     ctx.obj = load_project(file)

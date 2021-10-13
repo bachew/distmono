@@ -24,6 +24,9 @@ class SimpleProject(Project):
             'lambda-code': 'buckets',
         }
 
+    def get_default_build_target(self):
+        return 'lambda'
+
 
 class BucketsDpl(StackerDpl):
     def destroy(self):

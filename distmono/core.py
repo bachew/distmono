@@ -48,18 +48,15 @@ class Project:
 
     def build(self, target=None):
         if not target:
-            target = self.get_default_target()
+            target = self.get_default_build_target()
 
         Builder(self, target).build()
 
     def destroy(self, target=None):
-        if not target:
-            target = self.get_default_target()
-
         Destroyer(self, target).destroy()
 
-    def get_default_target(self):
-        return None
+    def get_default_build_target(self):
+        raise NotImplementedError()
 
     def create_context(self):
         env = deepcopy(self.env)
@@ -71,7 +68,7 @@ class Deployable:
         self.context = context
 
     def build(self):
-        return {}
+        raise NotImplementedError
 
     def destroy(self):
         pass
@@ -98,10 +95,7 @@ class Deployer:
 
 class Builder(Deployer):
     def build(self):
-        if self.target:
-            self.build_successors_first(self.target)
-        else:
-            self.build_all()
+        self.build_successors_first(self.target)
 
     def build_successors_first(self, target):
         successors = self.graph.successors(target)
@@ -110,13 +104,9 @@ class Builder(Deployer):
             for successor in successors:
                 self.build_successors_first(successor)
 
-        self.build_one(target)
+        self.build_target_only(target)
 
-    def build_all(self):
-        for target in reversed(self.graph.sort()):
-            self.build_one(target)
-
-    def build_one(self, target):
+    def build_target_only(self, target):
         ctx = self.project.create_context()
         dpl_cls = self.get_deployable_cls(target)
         dpl = dpl_cls(ctx)
@@ -156,6 +146,7 @@ class Destroyer(Deployer):
 class Context:
     project = attr.ib()
     env = attr.ib()
+    input = attr.ib(default=attr.Factory(dict))
 
 
 class DeploymentGraph:
