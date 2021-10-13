@@ -17,7 +17,7 @@ class EnvSchema(Schema):
 
 
 class SimpleProject(Project):
-    def validate_env(self, env):
+    def load_env(self, env):
         schema = EnvSchema()
         return schema.load(env)
 
@@ -39,14 +39,8 @@ class SimpleProject(Project):
 
 
 class BucketsDpl(StackerDpl):
-    def destroy(self):
-        # TESTING
-        print('Destroying buckets')
-
     def get_stacks(self):
-        return [
-            Stack(name='buckets', template=self.template),
-        ]
+        return [Stack('buckets', self.template)]
 
     @cached_property
     def template(self):
@@ -68,7 +62,7 @@ class BucketsDpl(StackerDpl):
 # TODO
 class LambdaCodeDpl(Deployable):
     def build(self):
-        print('Building lambda code')
+        print('Building lambda code', self.context.input)
 
     def destroy(self):
         print('Destroying lambda code')
@@ -77,7 +71,7 @@ class LambdaCodeDpl(Deployable):
 class LambdaDpl(Deployable):
     def build(self):
         # TESTING
-        print('Building lambda stack')
+        print('Building lambda stack', self.context.input)
 
     def destroy(self):
         # TESTING

@@ -6,5 +6,9 @@ class ConfigError(DistmonoError):
     pass
 
 
-class CircularDependencyError(Exception):
+class CircularDependencyError(DistmonoError):
+    pass
+
+
+class BuildNotFoundError(DistmonoError):
     pass

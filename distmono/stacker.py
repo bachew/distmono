@@ -1,7 +1,9 @@
 from distmono.core import Deployable
+from distmono.exceptions import BuildNotFoundError
 from distmono.util import sh
 from functools import cached_property
 import attr
+import re
 
 
 @attr.s(kw_only=True)
@@ -37,9 +39,9 @@ class Stacker:
         temp_dir = self.temp_dir / config.namespace
         sh.run(['rm', '-rf', str(temp_dir)])
         temp_dir.mkdir(parents=True, exist_ok=True)
-        config_file = temp_dir / 'stacker-config.yaml'
+        config_file = temp_dir / 'config.yaml'
         config_file.write_text(self.get_config_yaml(config, temp_dir))
-        env_file = temp_dir / 'stacker-env.yaml'
+        env_file = temp_dir / 'env.yaml'
         env_file.write_text(self._to_yaml(env))
         return temp_dir, config_file, env_file
 
@@ -54,10 +56,10 @@ class Stacker:
         return self._to_yaml(config)
 
     def get_stack_yaml_obj(self, stack, temp_dir):
-        template_file = temp_dir / f'cfn-{stack.name}.yaml'
+        template_file = temp_dir / f'stack-{stack.code}.yaml'
         template_file.write_text(stack.template.to_yaml())
         return {
-            'name': stack.name,
+            'name': stack.code,
             'template_path': str(template_file.relative_to(temp_dir)),
             'tags': stack.tags,
         }
@@ -90,38 +92,80 @@ class Stacker:
 @attr.s(kw_only=True)
 class Config:
     namespace = attr.ib()
+    namespace_delimiter = attr.ib(default='-')
     stacker_bucket = attr.ib(default='')
     stacks = attr.ib(default=attr.Factory(list))
     tags = attr.ib(default=attr.Factory(dict))
 
 
-@attr.s(kw_only=True)
+@attr.s
 class Stack:
-    name = attr.ib()
+    code = attr.ib()
     template = attr.ib()  # TODO: validator
-    tags = attr.ib(default=attr.Factory(dict))
+    tags = attr.ib(default=attr.Factory(dict), kw_only=True)
 
 
 class StackerDpl(Deployable):
     def build(self):
         stacker = self.get_stacker()
-        stacker.build(self.get_stacker_config(), self.context.env)
+        stacker.build(self.get_config(), self.context.env)
 
     def get_build_output(self):
-        return {}  # TODO: return output of all stacks
+        config = self.get_config()
+        ns_delim = config.namespace_delimiter
+        ns = config.namespace
+        output = {}
+
+        for stack in self.get_stacks():
+            stack_name = f'{ns}{ns_delim}{stack.code}'
+            output[stack.code] = self.get_stack_outputs(stack_name)
+
+        return output
+
+    def get_stack_outputs(self, stack_name):
+        try:
+            resp = self.cf.describe_stacks(StackName=stack_name)
+        except Exception as e:
+            if self.is_stack_does_not_exist_error(e):
+                raise BuildNotFoundError(str(e))
+
+            raise
+
+        outputs = resp['Stacks'][0]['Outputs']
+        return {o['OutputKey']: o['OutputValue'] for o in outputs}
+
+    @cached_property
+    def cf(self):
+        # Slow imports
+        from botocore.config import Config
+        import boto3
+
+        config = Config(region_name=self.get_region())
+        return boto3.client('cloudformation', config=config)
+
+    def is_stack_does_not_exist_error(self, e):
+        from botocore.exceptions import ClientError  # slow import
+
+        if not isinstance(e, ClientError):
+            return False
+
+        m = re.match(r'.*Stack .* does not exist.*', str(e))
+        return bool(m)
 
     def destroy(self):
         stacker = self.get_stacker()
-        stacker.destroy(self.get_stacker_config(), self.context.env)
+        stacker.destroy(self.get_config(), self.context.env)
 
     def get_stacker(self):
         return Stacker(project=self.context.project, region=self.get_region())
 
-    def get_stacker_config(self):
+    def get_config(self):
         return Config(namespace=self.get_namespace(), stacks=self.get_stacks())
 
     def get_stacks(self):
-        raise NotImplementedError()
+        raise NotImplementedError
+
+    # TODO: move these out also? If cannot move out, EnvScheme has to move back to core
 
     def get_namespace(self):
         return self.context.env['namespace']

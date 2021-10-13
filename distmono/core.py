@@ -21,11 +21,13 @@ class Project:
 
     @env.setter
     def env(self, env):
-        self._env = self.validate_env(env)
+        self._env = self.load_env(env)
 
-    def validate_env(self, env):
+    def load_env(self, env):
         if not isinstance(env, dict):
             return ValueError('Invalid env, must be a dict')
+
+        return env
 
     def get_deployables(self):
         raise NotImplementedError
@@ -47,7 +49,7 @@ class Project:
         Destroyer(self, target).destroy()
 
     def get_default_build_target(self):
-        raise NotImplementedError()
+        raise NotImplementedError
 
 
 class Deployable:
@@ -58,10 +60,14 @@ class Deployable:
         raise NotImplementedError
 
     def get_build_output(self):
+        '''
+        Returns the result of previous build, throws BuildNotFoundError if it
+        wasn't built before.
+        '''
         return {}
 
-    # TODO: query_build_output() and BuildOutputNotFoundError
-    # TODO: how about TTL?
+    def is_build_outdated(self):
+        return True
 
     def destroy(self):
         pass
@@ -107,8 +113,10 @@ class Builder(Deployer):
         ctx = Context.create(self.project, input)
         dpl_cls = self.get_deployable_cls(target)
         dpl = dpl_cls(ctx)
-        # TODO: don't build if still "fresh"
-        dpl.build()
+
+        if dpl.is_build_outdated():  # TODO: unless forced
+            dpl.build()
+
         output = dpl.get_build_output()
         # TODO: validate/filter
         return output
@@ -156,7 +164,7 @@ class Destroyer(Deployer):
         ctx = Context.create(self.project, input)
         dpl_cls = self.get_deployable_cls(target)
         dpl = dpl_cls(ctx)
-        # TODO: what if not available?
+        # TODO: rethrow BuildNotFoundError with elaboration
         return dpl.get_build_output()
 
 
