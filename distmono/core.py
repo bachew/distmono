@@ -9,6 +9,10 @@ import runpy
 class Project:
     def __init__(self, *, project_dir, env=None):
         self.project_dir = Path(project_dir)
+
+        if env is None:
+            env = {}
+
         self.env = env
 
     @property
@@ -17,24 +21,11 @@ class Project:
 
     @env.setter
     def env(self, env):
-        from marshmallow.exceptions import ValidationError  # slow import
+        self._env = self.validate_env(env)
 
-        schema_cls = self.get_env_schema_cls()
-        schema = schema_cls()
-
-        try:
-            self._env = schema.load(env)
-        except ValidationError as e:
-            raise ConfigError(f'Invalid env: {e}')
-
-    def get_env_schema_cls(self):
-        from marshmallow import Schema, fields  # slow import
-
-        class EnvSchema(Schema):
-            namespace = fields.Str(required=True)
-            region = fields.Str(required=True)
-
-        return EnvSchema
+    def validate_env(self, env):
+        if not isinstance(env, dict):
+            return ValueError('Invalid env, must be a dict')
 
     def get_deployables(self):
         raise NotImplementedError
@@ -50,17 +41,13 @@ class Project:
         if not target:
             target = self.get_default_build_target()
 
-        Builder(self, target).build()
+        return Builder(self, target).build()
 
     def destroy(self, target=None):
         Destroyer(self, target).destroy()
 
     def get_default_build_target(self):
         raise NotImplementedError()
-
-    def create_context(self):
-        env = deepcopy(self.env)
-        return Context(project=self, env=env)
 
 
 class Deployable:
@@ -95,24 +82,30 @@ class Deployer:
 
 class Builder(Deployer):
     def build(self):
-        self.build_successors_first(self.target)
+        builds = {}
+        return self.build_successors_first(self.target, builds)
 
-    def build_successors_first(self, target):
+    def build_successors_first(self, target, builds):
         successors = self.graph.successors(target)
+        input = {}
 
-        if successors:
-            for successor in successors:
-                self.build_successors_first(successor)
+        for successor in successors:
+            output = self.build_successors_first(successor, builds)
+            input[successor] = output
 
-        self.build_target_only(target)
+        if target not in builds:
+            builds[target] = self.build_target_only(target, input)
 
-    def build_target_only(self, target):
-        ctx = self.project.create_context()
+        return builds[target]
+
+    def build_target_only(self, target, input):
+        ctx = Context.create(self.project, input)
         dpl_cls = self.get_deployable_cls(target)
         dpl = dpl_cls(ctx)
         # TODO: don't build if still "fresh"
-        dpl.build()
-        # TODO: capture build output
+        output = dpl.build()
+        # TODO: validate/filter
+        return output
 
 
 class Destroyer(Deployer):
@@ -136,7 +129,7 @@ class Destroyer(Deployer):
             self.destroy_one(target)
 
     def destroy_one(self, target):
-        ctx = self.project.create_context()
+        ctx = Context.create(self.project, {})  # TODO: input
         dpl_cls = self.get_deployable_cls(target)
         dpl = dpl_cls(ctx)
         dpl.destroy()
@@ -147,6 +140,11 @@ class Context:
     project = attr.ib()
     env = attr.ib()
     input = attr.ib(default=attr.Factory(dict))
+
+    @classmethod
+    def create(cls, project, input):
+        env = deepcopy(project.env)
+        return Context(project=project, env=env, input=input)
 
 
 class DeploymentGraph:

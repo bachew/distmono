@@ -1,4 +1,4 @@
-from distmono.core import DeploymentGraph, load_project, Project
+from distmono.core import Deployable, DeploymentGraph, load_project, Project
 from distmono.exceptions import CircularDependencyError, ConfigError
 from textwrap import dedent
 import pytest
@@ -102,3 +102,74 @@ class TestDeploymentGraph:
 
         with pytest.raises(ValueError, match=r"Invalid target 'v',"):
             g.predecessors('v')
+
+
+class TestBuildDependency:
+    @pytest.fixture
+    def project(self, tmp_path):
+        return self.create_project(tmp_path)
+
+    def create_project(self, project_dir):
+        class TestProject(Project):
+            log = []
+
+            def get_deployables(self):
+                return {
+                    'a': A,
+                    'b1': B1,
+                    'b2': B2,
+                    'c': C,
+                }
+
+            def get_dependencies(self):
+                return {
+                    'b1': 'a',
+                    'b2': 'a',
+                    'c': ['b1', 'b2'],
+                }
+
+            def get_default_build_target(self):
+                return 'c'
+
+        class Common(Deployable):
+            def build(self):
+                assert self.context.input == self.expected_input
+                self.log(type(self).__name__)
+                return self.output
+
+            def destroy(self):
+                assert self.context.input == self.expected_input
+                self.log('~' + type(self).__name__)
+
+            def log(self, message):
+                self.context.project.log.append(message)
+
+        class A(Common):
+            expected_input = {}
+            output = {'apple': 1}
+
+        class B1(Common):
+            expected_input = {'a': {'apple': 1}}
+            output = {'boy': 1}
+
+        class B2(Common):
+            expected_input = {'a': {'apple': 1}}
+            output = {'boy': 2}
+
+        class C(Common):
+            expected_input = {
+                'b1': {'boy': 1},
+                'b2': {'boy': 2},
+            }
+            output = {'cat': 1}
+
+        return TestProject(project_dir=project_dir)
+
+    def test_build(self, project):
+        output = project.build()
+        assert project.log == ['A', 'B1', 'B2', 'C']
+        assert output == {'cat': 1}
+
+    def test_destroy(self, project):
+        project.destroy()
+        assert project.log == ['~C', '~B1', '~B2', '~A']

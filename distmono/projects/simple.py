@@ -1,6 +1,7 @@
 from distmono.core import Deployable, Project
 from distmono.stacker import Stack, StackerDpl
 from functools import cached_property
+from marshmallow import Schema, fields
 from troposphere import (
     GetAtt,
     Output,
@@ -10,7 +11,16 @@ from troposphere import (
 )
 
 
+class EnvSchema(Schema):
+    namespace = fields.Str(required=True)
+    region = fields.Str(required=True)
+
+
 class SimpleProject(Project):
+    def validate_env(self, env):
+        schema = EnvSchema()
+        return schema.load(env)
+
     def get_deployables(self):
         return {
             'lambda': LambdaDpl,
