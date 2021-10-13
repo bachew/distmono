@@ -105,7 +105,7 @@ class Stack:
     tags = attr.ib(default=attr.Factory(dict), kw_only=True)
 
 
-class StackerDpl(Deployable):
+class CloudFormation(Deployable):
     def build(self):
         stacker = self.get_stacker()
         stacker.build(self.get_config(), self.context.env)
@@ -131,7 +131,7 @@ class StackerDpl(Deployable):
 
             raise
 
-        outputs = resp['Stacks'][0]['Outputs']
+        outputs = resp['Stacks'][0].get('Outputs', [])
         return {o['OutputKey']: o['OutputValue'] for o in outputs}
 
     @cached_property

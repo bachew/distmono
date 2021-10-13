@@ -1,5 +1,9 @@
-from distmono.core import Deployable, Project
-from distmono.stacker import Stack, StackerDpl
+from distmono import (
+    CloudFormation,
+    Deployable,
+    Project,
+    Stack,
+)
 from functools import cached_property
 from marshmallow import Schema, fields
 from troposphere import (
@@ -38,7 +42,7 @@ class SimpleProject(Project):
         return 'lambda'
 
 
-class BucketsDpl(StackerDpl):
+class BucketsDpl(CloudFormation):
     def get_stacks(self):
         return [Stack('buckets', self.template)]
 
