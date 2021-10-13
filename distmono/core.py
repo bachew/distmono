@@ -57,6 +57,12 @@ class Deployable:
     def build(self):
         raise NotImplementedError
 
+    def get_build_output(self):
+        return {}
+
+    # TODO: query_build_output() and BuildOutputNotFoundError
+    # TODO: how about TTL?
+
     def destroy(self):
         pass
 
@@ -86,10 +92,9 @@ class Builder(Deployer):
         return self.build_successors_first(self.target, builds)
 
     def build_successors_first(self, target, builds):
-        successors = self.graph.successors(target)
         input = {}
 
-        for successor in successors:
+        for successor in self.graph.successors(target):
             output = self.build_successors_first(successor, builds)
             input[successor] = output
 
@@ -103,7 +108,8 @@ class Builder(Deployer):
         dpl_cls = self.get_deployable_cls(target)
         dpl = dpl_cls(ctx)
         # TODO: don't build if still "fresh"
-        output = dpl.build()
+        dpl.build()
+        output = dpl.get_build_output()
         # TODO: validate/filter
         return output
 
@@ -111,6 +117,7 @@ class Builder(Deployer):
 class Destroyer(Deployer):
     def destroy(self):
         if self.target:
+            self.destroyed = set()
             self.destroy_predecessors_first(self.target)
         else:
             self.destroy_all()
@@ -118,21 +125,39 @@ class Destroyer(Deployer):
     def destroy_predecessors_first(self, target):
         predecessors = self.graph.predecessors(target)
 
-        if predecessors:
-            for predecessor in predecessors:
-                self.destroy_predecessors_first(predecessor)
+        for predecessor in predecessors:
+            self.destroy_predecessors_first(predecessor)
 
-        self.destroy_one(target)
+        if target not in self.destroyed:
+            self.destroy_one(target)
+            self.destroyed.add(target)
 
     def destroy_all(self):
         for target in self.graph.sort():
             self.destroy_one(target)
 
     def destroy_one(self, target):
-        ctx = Context.create(self.project, {})  # TODO: input
+        input = self.get_successor_outputs(target)
+        ctx = Context.create(self.project, input)
         dpl_cls = self.get_deployable_cls(target)
         dpl = dpl_cls(ctx)
         dpl.destroy()
+
+    def get_successor_outputs(self, target):
+        outputs = {}
+
+        for successor in self.graph.successors(target):
+            outputs[successor] = self.get_build_output(successor)
+
+        return outputs
+
+    def get_build_output(self, target):
+        input = self.get_successor_outputs(target)
+        ctx = Context.create(self.project, input)
+        dpl_cls = self.get_deployable_cls(target)
+        dpl = dpl_cls(ctx)
+        # TODO: what if not available?
+        return dpl.get_build_output()
 
 
 @attr.s(kw_only=True)

@@ -59,7 +59,6 @@ class Stacker:
         return {
             'name': stack.name,
             'template_path': str(template_file.relative_to(temp_dir)),
-            'variables': stack.variables,
             'tags': stack.tags,
         }
 
@@ -100,7 +99,6 @@ class Config:
 class Stack:
     name = attr.ib()
     template = attr.ib()  # TODO: validator
-    variables = attr.ib(default=attr.Factory(dict))
     tags = attr.ib(default=attr.Factory(dict))
 
 
@@ -108,7 +106,9 @@ class StackerDpl(Deployable):
     def build(self):
         stacker = self.get_stacker()
         stacker.build(self.get_stacker_config(), self.context.env)
-        # TODO: return output of all stacks
+
+    def get_build_output(self):
+        return {}  # TODO: return output of all stacks
 
     def destroy(self):
         stacker = self.get_stacker()

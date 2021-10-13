@@ -135,7 +135,9 @@ class TestBuildDependency:
             def build(self):
                 assert self.context.input == self.expected_input
                 self.log(type(self).__name__)
-                return self.output
+
+            def get_build_output(self):
+                return self.build_output
 
             def destroy(self):
                 assert self.context.input == self.expected_input
@@ -146,22 +148,22 @@ class TestBuildDependency:
 
         class A(Common):
             expected_input = {}
-            output = {'apple': 1}
+            build_output = {'apple': 1}
 
         class B1(Common):
             expected_input = {'a': {'apple': 1}}
-            output = {'boy': 1}
+            build_output = {'boy': 1}
 
         class B2(Common):
             expected_input = {'a': {'apple': 1}}
-            output = {'boy': 2}
+            build_output = {'boy': 2}
 
         class C(Common):
             expected_input = {
                 'b1': {'boy': 1},
                 'b2': {'boy': 2},
             }
-            output = {'cat': 1}
+            build_output = {'cat': 1}
 
         return TestProject(project_dir=project_dir)
 
@@ -172,4 +174,8 @@ class TestBuildDependency:
 
     def test_destroy(self, project):
         project.destroy()
+        assert project.log == ['~C', '~B1', '~B2', '~A']
+
+    def test_destroy_specific(self, project):
+        project.destroy('a')
         assert project.log == ['~C', '~B1', '~B2', '~A']
