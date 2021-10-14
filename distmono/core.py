@@ -1,5 +1,6 @@
 from copy import deepcopy
 from distmono.exceptions import CircularDependencyError, ConfigError
+from distmono.util import sh
 from functools import cached_property
 from pathlib import Path
 import attr
@@ -58,7 +59,7 @@ class Deployable:
         self.context = context
 
     def build(self):
-        raise NotImplementedError
+        pass
 
     def get_build_output(self):
         '''
@@ -111,12 +112,13 @@ class Builder(Deployer):
         return builds[target]
 
     def build_target_only(self, target, input):
-        ctx = Context.create(self.project, input)
+        ctx = Context.create(self.project, target, input)
         dpl_cls = self.get_deployable_cls(target)
         dpl = dpl_cls(ctx)
 
-        if dpl.is_build_outdated():  # TODO: unless forced
-            dpl.build()
+        if dpl.is_build_outdated():  # TODO: option to force build all or some targets
+            with sh.chdir(ctx.build_dir):
+                dpl.build()
 
         output = dpl.get_build_output()
         # TODO: validate/filter
@@ -147,10 +149,12 @@ class Destroyer(Deployer):
 
     def destroy_one(self, target):
         input = self.get_successor_outputs(target)
-        ctx = Context.create(self.project, input)
+        ctx = Context.create(self.project, target, input)
         dpl_cls = self.get_deployable_cls(target)
         dpl = dpl_cls(ctx)
-        dpl.destroy()
+
+        with sh.chdir(ctx.destroy_dir):
+            dpl.destroy()
 
     def get_successor_outputs(self, target):
         outputs = {}
@@ -162,7 +166,7 @@ class Destroyer(Deployer):
 
     def get_build_output(self, target):
         input = self.get_successor_outputs(target)
-        ctx = Context.create(self.project, input)
+        ctx = Context.create(self.project, target, input)
         dpl_cls = self.get_deployable_cls(target)
         dpl = dpl_cls(ctx)
         # TODO: rethrow BuildNotFoundError with elaboration
@@ -174,11 +178,29 @@ class Context:
     project = attr.ib()
     env = attr.ib()
     input = attr.ib(default=attr.Factory(dict))
+    build_dir = attr.ib()
+    build_output_dir = attr.ib()
+    destroy_dir = attr.ib()
+    destroy_output_dir = attr.ib()
 
     @classmethod
-    def create(cls, project, input):
+    def create(cls, project, target, input):
         env = deepcopy(project.env)
-        return Context(project=project, env=env, input=input)
+        tdir = project.temp_dir
+        return Context(
+            project=project,
+            env=env,
+            input=input,
+            build_dir=cls._mkdir(tdir / 'build' / target),
+            build_output_dir=cls._mkdir(tdir / 'build-output' / target),
+            destroy_dir=cls._mkdir(tdir / 'destroy' / target),
+            destroy_output_dir=cls._mkdir(tdir / 'destroy-output' / target),
+        )
+
+    @classmethod
+    def _mkdir(cls, d):
+        d.mkdir(parents=True, exist_ok=True)
+        return d
 
 
 class DeploymentGraph:

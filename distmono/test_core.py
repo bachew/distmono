@@ -1,5 +1,6 @@
 from distmono.core import Deployable, DeploymentGraph, load_project, Project
 from distmono.exceptions import CircularDependencyError, ConfigError
+from pathlib import Path
 from textwrap import dedent
 import pytest
 
@@ -179,3 +180,58 @@ class TestBuildDependency:
     def test_destroy_specific(self, project):
         project.destroy('a')
         assert project.log == ['~C', '~B1', '~B2', '~A']
+
+
+class TestTempBuildDir:
+    @pytest.fixture
+    def project(self, tmp_path):
+        class TestProject(Project):
+            def get_deployables(self):
+                return {
+                    'all': Deployable,
+                    'a': A,
+                    'b': B,
+                }
+
+            def get_dependencies(self):
+                return {
+                    'all': ['a', 'b']
+                }
+
+            def get_default_build_target(self):
+                return 'all'
+
+        class Log(Deployable):
+            def build(self):
+                self.log_file.write_text(f'{self.name} was here')
+
+            def destroy(self):
+                self.log_file.write_text(f'{self.name} is dead')
+
+            @property
+            def log_file(self):
+                return Path('log')
+
+            @property
+            def name(self):
+                return type(self).__name__
+
+        class A(Log):
+            pass
+
+        class B(Log):
+            pass
+
+        return TestProject(project_dir=tmp_path)
+
+    def test_build(self, project):
+        project.build()
+        build_dir = project.temp_dir / 'build'
+        assert (build_dir / 'a/log').read_text() == 'A was here'
+        assert (build_dir / 'b/log').read_text() == 'B was here'
+
+    def test_destroy(self, project):
+        project.destroy()
+        destroy_dir = project.temp_dir / 'destroy'
+        assert (destroy_dir / 'a/log').read_text() == 'A is dead'
+        assert (destroy_dir / 'b/log').read_text() == 'B is dead'
