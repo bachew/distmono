@@ -6,11 +6,12 @@ from pathlib import Path
 import attr
 import networkx as nx
 import runpy
+import shutil
 
 
 class Project:
     def __init__(self, *, project_dir, env=None):
-        self.project_dir = Path(project_dir)
+        self.project_dir = Path(project_dir).resolve()
 
         if env is None:
             env = {}
@@ -37,6 +38,9 @@ class Project:
     def get_dependencies(self):
         raise NotImplementedError
 
+    def get_default_build_target(self):
+        raise NotImplementedError
+
     @cached_property
     def temp_dir(self):
         return Path(self.project_dir) / 'tmp'
@@ -47,11 +51,14 @@ class Project:
 
         return Builder(self, target).build()
 
+    def clear_build_output(self, target):
+        self.clear_build_outputs([target])
+
+    def clear_build_outputs(self, targets):
+        pass  # TODO
+
     def destroy(self, target=None):
         Destroyer(self, target).destroy()
-
-    def get_default_build_target(self):
-        raise NotImplementedError
 
 
 class Deployable:
@@ -116,7 +123,7 @@ class Builder(Deployer):
         dpl_cls = self.get_deployable_cls(target)
         dpl = dpl_cls(ctx)
 
-        if dpl.is_build_outdated():  # TODO: option to force build all or some targets
+        if dpl.is_build_outdated():
             with sh.chdir(ctx.build_dir):
                 dpl.build()
 
@@ -181,7 +188,6 @@ class Context:
     build_dir = attr.ib()
     build_output_dir = attr.ib()
     destroy_dir = attr.ib()
-    destroy_output_dir = attr.ib()
 
     @classmethod
     def create(cls, project, target, input):
@@ -191,14 +197,19 @@ class Context:
             project=project,
             env=env,
             input=input,
-            build_dir=cls._mkdir(tdir / 'build' / target),
-            build_output_dir=cls._mkdir(tdir / 'build-output' / target),
-            destroy_dir=cls._mkdir(tdir / 'destroy' / target),
-            destroy_output_dir=cls._mkdir(tdir / 'destroy-output' / target),
+            build_dir=cls.mkdir(tdir / 'build' / target, clear=True),
+            build_output_dir=cls.mkdir(tdir / 'build-output' / target),
+            destroy_dir=cls.mkdir(tdir / 'destroy' / target, clear=True),
         )
 
     @classmethod
-    def _mkdir(cls, d):
+    def mkdir(cls, d, clear=False):
+        if d.is_file():
+            d.unlink()
+
+        if d.is_dir() and clear:
+            shutil.rmtree(d)
+
         d.mkdir(parents=True, exist_ok=True)
         return d
 

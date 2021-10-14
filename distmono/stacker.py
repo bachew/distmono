@@ -5,6 +5,7 @@ from distmono.exceptions import BuildNotFoundError
 from distmono.util import sh
 from functools import cached_property
 from marshmallow import Schema, fields, ValidationError
+from pathlib import Path
 import attr
 import boto3
 import re
@@ -26,7 +27,7 @@ class EnvSchema(Schema):
 
 @attr.s(kw_only=True)
 class Stacker:
-    project = attr.ib()
+    work_dir = attr.ib()
     region = attr.ib()
     recreate_failed = attr.ib(default=True)
 
@@ -36,49 +37,45 @@ class Stacker:
         if self.recreate_failed:
             cmd.append('--recreate-failed')
 
-        temp_dir, config_file, env_file = self.generate_input_files(config, env)
-
-        with sh.chdir(temp_dir):
-            cmd.append(env_file.relative_to(temp_dir))
-            cmd.append(config_file.relative_to(temp_dir))
+        with sh.chdir(self.work_dir):
+            config_file, env_file = self.generate_input_files(config, env)
+            cmd.append(env_file)
+            cmd.append(config_file)
             sh.run(cmd)
 
     def destroy(self, config, env):
         cmd = ['stacker', 'destroy', '-r', self.region, '--force']
-        temp_dir, config_file, env_file = self.generate_input_files(config, env)
 
-        with sh.chdir(temp_dir):
-            cmd.append(env_file.relative_to(temp_dir))
-            cmd.append(config_file.relative_to(temp_dir))
+        with sh.chdir(self.work_dir):
+            config_file, env_file = self.generate_input_files(config, env)
+            cmd.append(env_file)
+            cmd.append(config_file)
             sh.run(cmd)
 
     def generate_input_files(self, config, env):
         self.validate_namespace(config, env)
-        temp_dir = self.temp_dir / config.namespace
-        sh.run(['rm', '-rf', str(temp_dir)])
-        temp_dir.mkdir(parents=True, exist_ok=True)
-        config_file = temp_dir / 'config.yaml'
-        config_file.write_text(self.get_config_yaml(config, temp_dir))
-        env_file = temp_dir / 'env.yaml'
-        env_file.write_text(self._to_yaml(env))
-        return temp_dir, config_file, env_file
+        config_file = Path('config.yaml')
+        config_file.write_text(self.get_config_yaml(config))
+        env_file = Path('env.yaml')
+        env_file.write_text(yaml.dump(env))
+        return config_file, env_file
 
-    def get_config_yaml(self, config, temp_dir):
-        stacks = [self.get_stack_yaml_obj(s, temp_dir) for s in config.stacks]
+    def get_config_yaml(self, config):
+        stacks = [self.get_stack_yaml_obj(s) for s in config.stacks]
         config = {
             'namespace': config.namespace,
             'stacker_bucket': config.stacker_bucket,
             'stacks': stacks,
             'tags': config.tags,
         }
-        return self._to_yaml(config)
+        return yaml.dump(config)
 
-    def get_stack_yaml_obj(self, stack, temp_dir):
-        template_file = temp_dir / f'stack-{stack.code}.yaml'
+    def get_stack_yaml_obj(self, stack):
+        template_file = Path(f'stack.yaml')
         template_file.write_text(stack.template.to_yaml())
         return {
             'name': stack.code,
-            'template_path': str(template_file.relative_to(temp_dir)),
+            'template_path': str(template_file),
             'tags': stack.tags,
         }
 
@@ -93,17 +90,6 @@ class Stacker:
                 f'Config namespace {config.namespace!r}'
                 f' and environment namespace {env[ns]!r} are different'
                 f', they should be the same')
-
-    @cached_property
-    def temp_dir(self):
-        return self.project.temp_dir / 'stacker'
-
-    @cached_property
-    def generated_dir(self):
-        return self.temp_dir / 'generated'
-
-    def _to_yaml(self, obj):
-        return yaml.dump(obj)
 
 
 @attr.s(kw_only=True)
@@ -122,13 +108,14 @@ class Stack:
     tags = attr.ib(default=attr.Factory(dict), kw_only=True)
 
 
+# TODO: implement fully Deployable methods
 class CloudFormation(Deployable):
     def build(self):
-        stacker = self.get_stacker()
+        stacker = self.get_stacker(self.context.build_dir)
         stacker.build(self.get_config(), self.context.env)
 
-    def get_stacker(self):
-        return Stacker(project=self.context.project, region=self.get_region())
+    def get_stacker(self, work_dir):
+        return Stacker(work_dir=work_dir, region=self.get_region())
 
     def get_config(self):
         return Config(namespace=self.get_namespace(), stacks=[self.get_stack()])
@@ -185,5 +172,5 @@ class CloudFormation(Deployable):
         return bool(m)
 
     def destroy(self):
-        stacker = self.get_stacker()
+        stacker = self.get_stacker(self.context.destroy_dir)
         stacker.destroy(self.get_config(), self.context.env)

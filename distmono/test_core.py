@@ -182,7 +182,7 @@ class TestBuildDependency:
         assert project.log == ['~C', '~B1', '~B2', '~A']
 
 
-class TestTempBuildDir:
+class TestBuildDirs:
     @pytest.fixture
     def project(self, tmp_path):
         class TestProject(Project):
@@ -203,14 +203,19 @@ class TestTempBuildDir:
 
         class Log(Deployable):
             def build(self):
-                self.log_file.write_text(f'{self.name} was here')
+                self.append_log(f'{self.name} was here\n')
+
+                output_file = self.context.build_output_dir / 'output'
+
+                with open(output_file, 'a') as f:
+                    f.write(f'{self.name} output\n')
 
             def destroy(self):
-                self.log_file.write_text(f'{self.name} is dead')
+                self.append_log(f'{self.name} is dead\n')
 
-            @property
-            def log_file(self):
-                return Path('log')
+            def append_log(self, message):
+                with open('log', 'a') as f:
+                    f.write(message)
 
             @property
             def name(self):
@@ -227,11 +232,30 @@ class TestTempBuildDir:
     def test_build(self, project):
         project.build()
         build_dir = project.temp_dir / 'build'
-        assert (build_dir / 'a/log').read_text() == 'A was here'
-        assert (build_dir / 'b/log').read_text() == 'B was here'
+        assert (build_dir / 'a/log').read_text() == 'A was here\n'
+        assert (build_dir / 'b/log').read_text() == 'B was here\n'
+
+    def test_build_output(self, project):
+        project.build()
+        tdir = project.temp_dir
+        assert (tdir / 'build/a/log').read_text() == 'A was here\n'
+        assert (tdir / 'build-output/a/output').read_text() == 'A output\n'
+        project.build()
+        assert (tdir / 'build/a/log').read_text() == 'A was here\n'
+        assert (tdir / 'build-output/a/output').read_text() == 'A output\nA output\n'
+
+    def test_transient_build_dir(self, project):
+        project.build()
+        project.build()
+        assert (project.temp_dir / 'build/a/log').read_text() == 'A was here\n'
 
     def test_destroy(self, project):
         project.destroy()
         destroy_dir = project.temp_dir / 'destroy'
-        assert (destroy_dir / 'a/log').read_text() == 'A is dead'
-        assert (destroy_dir / 'b/log').read_text() == 'B is dead'
+        assert (destroy_dir / 'a/log').read_text() == 'A is dead\n'
+        assert (destroy_dir / 'b/log').read_text() == 'B is dead\n'
+
+    def test_transient_destroy_dir(self, project):
+        project.destroy()
+        project.destroy()
+        assert (project.temp_dir / 'destroy/b/log').read_text() == 'B is dead\n'
