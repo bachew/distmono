@@ -12,7 +12,7 @@ import re
 import yaml
 
 
-class StackerProject(Project):
+class AwsProject(Project):
     def load_env(self, env):
         try:
             return EnvSchema().load(env)
@@ -87,13 +87,13 @@ class Stacker:
 
         if config.namespace != env[ns]:
             raise ValueError(
-                f'Config namespace {config.namespace!r}'
+                f'Stacker config namespace {config.namespace!r}'
                 f' and environment namespace {env[ns]!r} are different'
                 f', they should be the same')
 
 
 @attr.s(kw_only=True)
-class Config:
+class StackerConfig:
     namespace = attr.ib()
     namespace_delimiter = attr.ib(default='-')
     stacker_bucket = attr.ib(default='')
@@ -102,26 +102,28 @@ class Config:
 
 
 @attr.s
-class Stack:
+class StackerStack:
     code = attr.ib()
     template = attr.ib()  # TODO: validator
     tags = attr.ib(default=attr.Factory(dict), kw_only=True)
 
 
 # TODO: implement fully Deployable methods
-class CloudFormation(Deployable):
+class Stack(Deployable):
     def build(self):
         stacker = self.get_stacker(self.context.build_dir)
-        stacker.build(self.get_config(), self.context.env)
+        stacker.build(self.get_stacker_config(), self.context.env)
 
     def get_stacker(self, work_dir):
         return Stacker(work_dir=work_dir, region=self.get_region())
 
-    def get_config(self):
-        return Config(namespace=self.get_namespace(), stacks=[self.get_stack()])
+    def get_stacker_config(self):
+        return StackerConfig(
+            namespace=self.get_namespace(),
+            stacks=[self.get_stacker_stack()])
 
-    def get_stack(self):
-        return Stack(
+    def get_stacker_stack(self):
+        return StackerStack(
             code=self.get_code(),
             template=self.get_template(),
             tags=self.get_tags())
@@ -142,8 +144,8 @@ class CloudFormation(Deployable):
         return {}
 
     def get_build_output(self):
-        c = self.get_config()
-        stack = self.get_stack()
+        c = self.get_stacker_config()
+        stack = self.get_stacker_stack()
         stack_name = f'{c.namespace}{c.namespace_delimiter}{stack.code}'
         return self.get_stack_outputs(stack_name)
 

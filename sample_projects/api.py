@@ -1,7 +1,7 @@
 from distmono import (
-    CloudFormation,
+    AwsProject,
     Deployable,
-    StackerProject,
+    Stack,
 )
 from troposphere import (
     GetAtt,
@@ -17,9 +17,10 @@ from functools import cached_property
 from pathlib import Path
 from awacs.aws import Action, Allow, PolicyDocument, Principal, Statement
 from awacs.sts import AssumeRole
+import shutil
 
 
-class ApiProject(StackerProject):
+class ApiProject(AwsProject):
     def get_deployables(self):
         return {
             'api-stack': ApiStack,
@@ -29,23 +30,27 @@ class ApiProject(StackerProject):
             'buckets-stack': BucketsStack,
             'access-stack': AccessStack,
             'invoke-function': InvokeFunction,
+
+            'test': Deployable,
         }
 
     def get_dependencies(self):
         return {
             'api-stack': 'function-stack',
             'function-stack': ['function-code', 'layer-code', 'access-stack'],
-            'function-code': 'buckets-stack',
-            'layer-code': 'buckets-stack',
+            # 'function-code': 'buckets-stack',
+            # 'layer-code': 'buckets-stack',
             'buckets-stack': 'access-stack',
             'invoke-function': 'function-stack',
+
+            'test': ['function-code', 'layer-code'],
         }
 
     def get_default_build_target(self):
         return 'api-stack'
 
 
-class ApiStack(CloudFormation):
+class ApiStack(Stack):
     code = 'api'
 
     def get_template(self):
@@ -57,15 +62,19 @@ class ApiStack(CloudFormation):
         return t
 
 
-class FunctionStack(CloudFormation):
+class FunctionStack(Stack):
     code = 'func'
 
     def get_template(self):
         t = Template()
-        self.add_function(t)
+        layer = self.add_layer(t)
+        self.add_function(t, layer)
         return t
 
-    def add_function(self, t):
+    def add_layer(self, t):
+        pass  # TODO: https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-lambda-layerversion.html
+
+    def add_function(self, t, layer):
         code_input = self.context.input['function-code']
         func = lambd.Function(
             'RequestHandler',
@@ -74,6 +83,7 @@ class FunctionStack(CloudFormation):
                 S3Bucket=code_input['Bucket'],
                 S3Key=code_input['Key'],
             ),
+            Runtime='python3.7',
             Handler=code_input['Handler'],
             Role=self.app_role_arn,
             # MemorySize=128,
@@ -93,45 +103,50 @@ class InvokeFunction(Deployable):
         print(f'TODO: invoke function, input={self.context.input}')
 
 
-class FunctionCode(Deployable):
-    def build(self):
-        print(f'TODO: build function code from {self.code_dir}')
-
-    def get_build_output(self):
-        output = {
-            'Bucket': self.context.input['buckets-stack']['CodeBucketName'],
-            'Key': '',  # TODO
-            'Handler': '',  # TODO
-        }
-        return output
-
-    def is_build_outdated(self):
-        # TODO
-        return True
-
-    @cached_property
-    def function_dir(self):
-        return self.functions_dir / self.function_name
-
-    @cached_property
-    def functions_dir(self):
-        return self.code_base_dir / 'functions'
-
+class CodeMixin:
     @cached_property
     def code_base_dir(self):
         return Path(__file__).parent / 'api-code'
 
 
-class MainFunctionCode(FunctionCode):
-    function_name = 'main'
-
-
-class LayerCode(Deployable):
+class FunctionCode(Deployable, CodeMixin):
     def build(self):
-        pass  # TODO: Could merge with FunctionCode
+        shutil.make_archive('code', 'zip', self.function_dir)
+        # TODO: hash and rename
+        # TODO: upload to bucket
+        # TODO: write to output dir
+
+    @property
+    def bucket_name(self):
+        # return 'testing'
+        return self.context.input['buckets-stack']['CodeBucketName']
+
+    def get_build_output(self):
+        # TODO: read from output dir
+        output = {
+            'Bucket': self.bucket_name,
+            'Key': '',  # TODO
+            'Handler': 'handler.handle',
+        }
+        return output
+
+    @cached_property
+    def function_dir(self):
+        return self.code_base_dir / 'function'
 
 
-class BucketsStack(CloudFormation):
+class LayerCode(Deployable, CodeMixin):
+    def build(self):
+        # TODO: clone layer dir and install requirements in it before zipping
+        shutil.make_archive('layer', 'zip', self.layer_dir, 'python')
+        # TODO: follow FunctionCode
+
+    @cached_property
+    def layer_dir(self):
+        return self.code_base_dir / 'layer'
+
+
+class BucketsStack(Stack):
     code = 'buckets'
 
     def get_template(self):
@@ -160,7 +175,7 @@ class BucketsStack(CloudFormation):
         return bucket
 
 
-class AccessStack(CloudFormation):
+class AccessStack(Stack):
     code = 'access'
 
     def get_template(self):
