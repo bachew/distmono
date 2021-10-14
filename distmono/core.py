@@ -3,6 +3,7 @@ from distmono.exceptions import CircularDependencyError, ConfigError
 from functools import cached_property
 from pathlib import Path
 import attr
+import networkx as nx
 import runpy
 
 
@@ -25,7 +26,7 @@ class Project:
 
     def load_env(self, env):
         if not isinstance(env, dict):
-            return ValueError('Invalid env, must be a dict')
+            raise ValueError('Invalid project env, it must be a dict')
 
         return env
 
@@ -182,7 +183,7 @@ class Context:
 
 class DeploymentGraph:
     def __init__(self, nodes, edges):
-        g = self.nx.DiGraph()
+        g = nx.DiGraph()
         self.node_set = set()
         self.node_list = []
 
@@ -203,7 +204,7 @@ class DeploymentGraph:
                 self.validate_node(b_item)
                 g.add_edge(a, b_item)
 
-        cycles = list(self.nx.simple_cycles(g))
+        cycles = list(nx.simple_cycles(g))
 
         if cycles:
             path = ' -> '.join(cycles[0])
@@ -216,11 +217,6 @@ class DeploymentGraph:
         if node not in self.node_set:
             msg = f'Invalid target {node!r}, must be one of {list(self.node_list)!r}'
             raise ValueError(msg)
-
-    @cached_property
-    def nx(self):
-        import networkx  # slow import
-        return networkx
 
     @property
     def nodes(self):
@@ -239,7 +235,7 @@ class DeploymentGraph:
         return list(self.graph.predecessors(node))
 
     def sort(self):
-        return list(self.nx.topological_sort(self.graph))
+        return list(nx.topological_sort(self.graph))
 
 
 def load_project(filename):

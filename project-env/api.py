@@ -1,4 +1,4 @@
-from distmono.projects.api import ApiProject
+from sample_projects.api import ApiProject
 from pathlib import Path
 
 
@@ -10,6 +10,6 @@ def get_project():
 
 def get_env():
     return {
-        'namespace': 'distmono-api',
+        'namespace': 'distmono-sample-api',
         'region': 'ap-southeast-1',
     }

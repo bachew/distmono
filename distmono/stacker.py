@@ -1,9 +1,27 @@
-from distmono.core import Deployable
+from botocore.config import Config as BotoConfig
+from botocore.exceptions import ClientError
+from distmono.core import Deployable, Project
 from distmono.exceptions import BuildNotFoundError
 from distmono.util import sh
 from functools import cached_property
+from marshmallow import Schema, fields, ValidationError
 import attr
+import boto3
 import re
+import yaml
+
+
+class StackerProject(Project):
+    def load_env(self, env):
+        try:
+            return EnvSchema().load(env)
+        except ValidationError as e:
+            raise ValueError(f'Invalid project env: {e}')
+
+
+class EnvSchema(Schema):
+    namespace = fields.Str(required=True)
+    region = fields.Str(required=True)
 
 
 @attr.s(kw_only=True)
@@ -85,7 +103,6 @@ class Stacker:
         return self.temp_dir / 'generated'
 
     def _to_yaml(self, obj):
-        import yaml  # lazy import, to speed up CLI
         return yaml.dump(obj)
 
 
@@ -136,16 +153,10 @@ class CloudFormation(Deployable):
 
     @cached_property
     def cf(self):
-        # Slow imports
-        from botocore.config import Config
-        import boto3
-
-        config = Config(region_name=self.get_region())
+        config = BotoConfig(region_name=self.get_region())
         return boto3.client('cloudformation', config=config)
 
     def is_stack_does_not_exist_error(self, e):
-        from botocore.exceptions import ClientError  # slow import
-
         if not isinstance(e, ClientError):
             return False
 
@@ -164,8 +175,6 @@ class CloudFormation(Deployable):
 
     def get_stacks(self):
         raise NotImplementedError
-
-    # TODO: move these out also? If cannot move out, EnvScheme has to move back to core
 
     def get_namespace(self):
         return self.context.env['namespace']
