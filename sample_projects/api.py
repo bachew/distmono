@@ -14,7 +14,8 @@ from troposphere import (
 )
 from functools import cached_property
 from pathlib import Path
-import awacs
+from awacs.aws import Action, Allow, PolicyDocument, Principal, Statement
+from awacs.sts import AssumeRole
 
 
 class ApiProject(StackerProject):
@@ -80,23 +81,62 @@ class AccessStack(CloudFormation):
 
     def get_template(self):
         t = Template()
-        self.add_app_policy(t)
+        app_policy = self.add_app_policy(t)
+        self.add_app_role(t, app_policy)
         return t
 
     def add_app_policy(self, t):
-        t.add_resource(iam.ManagedPolicy(
+        policy = iam.ManagedPolicy(
             'AppPolicy',
-            PolicyDocument=awacs.aws.PolicyDocument(
-                Version='2012-10-17',
-                Statement=[
-                    awacs.aws.Statement(
-                        Effect=awacs.aws.Allow,
-                        Action=[awacs.aws.Action('lambda', 'InvokeFunction')],
-                        Resource=['*'],
-                    ),
-                ]
-            )
-        ))
+            PolicyDocument=self.policy_document([
+                Statement(
+                    Effect=Allow,
+                    Action=[Action('lambda', 'InvokeFunction')],
+                    Resource=['*'],  # TODO: narrow down
+                ),
+                Statement(
+                    Effect=Allow,
+                    Action=[Action('s3', '*')],
+                    Resource=['*'],  # TODO: narrow down
+                )
+            ])
+        )
+        return t.add_resource(policy)
+
+    def add_app_role(self, t, app_policy):
+        role = iam.Role(
+            'AppRole',
+            RoleName='app',
+            AssumeRolePolicyDocument=self.policy_document([
+                Statement(
+                    Effect=Allow,
+                    Action=[AssumeRole],
+                    Principal=Principal('Service', [
+                        'lambda.amazonaws.com',
+                        'apigateway.amazonaws.com',
+                        # 'firehose.amazonaws.com',
+                    ])
+                ),
+                Statement(
+                    Effect=Allow,
+                    Action=[AssumeRole],
+                    Principal=Principal('AWS', [
+                        Sub('arn:aws:iam::${AWS::AccountId}:root'),
+                        # Sub('arn:aws:iam::${AWS::AccountId}:${PrimaryRoleName}'),
+                    ])
+                ),
+            ]),
+            ManagedPolicyArns=[
+                Ref(app_policy),
+                'arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole',
+            ]
+        )
+        return t.add_resource(role)
+
+    def policy_document(self, statement):
+        return PolicyDocument(
+            Version='2012-10-17',
+            Statement=statement)
 
 
 class BucketsStack(CloudFormation):
