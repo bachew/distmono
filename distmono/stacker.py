@@ -127,17 +127,38 @@ class CloudFormation(Deployable):
         stacker = self.get_stacker()
         stacker.build(self.get_config(), self.context.env)
 
+    def get_stacker(self):
+        return Stacker(project=self.context.project, region=self.get_region())
+
+    def get_config(self):
+        return Config(namespace=self.get_namespace(), stacks=[self.get_stack()])
+
+    def get_stack(self):
+        return Stack(
+            code=self.get_code(),
+            template=self.get_template(),
+            tags=self.get_tags())
+
+    def get_namespace(self):
+        return self.context.env['namespace']
+
+    def get_region(self):
+        return self.context.env['region']
+
+    def get_code(self):
+        return self.code
+
+    def get_template(self):
+        raise NotImplementedError
+
+    def get_tags(self):
+        return {}
+
     def get_build_output(self):
-        config = self.get_config()
-        ns_delim = config.namespace_delimiter
-        ns = config.namespace
-        output = {}
-
-        for stack in self.get_stacks():
-            stack_name = f'{ns}{ns_delim}{stack.code}'
-            output[stack.code] = self.get_stack_outputs(stack_name)
-
-        return output
+        c = self.get_config()
+        stack = self.get_stack()
+        stack_name = f'{c.namespace}{c.namespace_delimiter}{stack.code}'
+        return self.get_stack_outputs(stack_name)
 
     def get_stack_outputs(self, stack_name):
         try:
@@ -166,18 +187,3 @@ class CloudFormation(Deployable):
     def destroy(self):
         stacker = self.get_stacker()
         stacker.destroy(self.get_config(), self.context.env)
-
-    def get_stacker(self):
-        return Stacker(project=self.context.project, region=self.get_region())
-
-    def get_config(self):
-        return Config(namespace=self.get_namespace(), stacks=self.get_stacks())
-
-    def get_stacks(self):
-        raise NotImplementedError
-
-    def get_namespace(self):
-        return self.context.env['namespace']
-
-    def get_region(self):
-        return self.context.env['region']

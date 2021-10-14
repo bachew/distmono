@@ -2,64 +2,52 @@ from distmono import (
     CloudFormation,
     Deployable,
     StackerProject,
-    Stack,
 )
 from troposphere import (
     GetAtt,
+    iam,
     Output,
     Ref,
-    Sub,
     s3,
+    Sub,
     Template,
 )
 from functools import cached_property
 from pathlib import Path
+import awacs
 
 
 class ApiProject(StackerProject):
     def get_deployables(self):
         return {
-            'api': Api,
+            'api-stack': ApiStack,
             'function-code': FunctionCode,
             'layer-code': LayerCode,
-            'base': Base,
+            'buckets-stack': BucketsStack,
+            'access-stack': AccessStack,
         }
 
     def get_dependencies(self):
         return {
-            'api': ['function-code', 'layer-code'],
-            'function-code': 'base',
-            'layer-code': 'base',
+            'api-stack': ['function-code', 'layer-code'],
+            'function-code': 'buckets-stack',
+            'layer-code': 'buckets-stack',
+            'buckets-stack': 'access-stack',
         }
 
     def get_default_build_target(self):
-        return 'api'
+        return 'api-stack'
 
 
-class Api(CloudFormation):
-    def get_stacks(self):
-        return [
-            Stack('api', self.api_template()),
-            Stack('function', self.function_template()),
-        ]
+class ApiStack(CloudFormation):
+    code = 'api'
 
-    def api_template(self):
+    def get_template(self):
         t = Template()
         # TODO
         t.add_resource(s3.Bucket(
             'DummyBucket',
             BucketName=Sub('${AWS::StackName}-dummy-bucket')))
-        return t
-
-    def function_template(self):
-        t = Template()
-        # TODO
-        t.add_resource(s3.Bucket(
-            'Function',
-            BucketName=Sub('${AWS::StackName}-function')))
-        t.add_resource(s3.Bucket(
-            'Layer',
-            BucketName=Sub('${AWS::StackName}-layer')))
         return t
 
 
@@ -87,20 +75,34 @@ class LayerCode(Code):
         return self.code_base_dir / 'layer'
 
 
-class Base(CloudFormation):
-    def get_stacks(self):
-        return [
-            # Stack('access', self.template_access()),
-            Stack('buckets', self.template_bucket()),
-        ]
+class AccessStack(CloudFormation):
+    code = 'access'
 
-    def template_access(self):
+    def get_template(self):
         t = Template()
-        # TODO: AppRole, AppPolicy
+        self.add_app_policy(t)
         return t
 
-    def template_bucket(self):
-        ctx = self.context
+    def add_app_policy(self, t):
+        t.add_resource(iam.ManagedPolicy(
+            'AppPolicy',
+            PolicyDocument=awacs.aws.PolicyDocument(
+                Version='2012-10-17',
+                Statement=[
+                    awacs.aws.Statement(
+                        Effect=awacs.aws.Allow,
+                        Action=[awacs.aws.Action('lambda', 'InvokeFunction')],
+                        Resource=['*'],
+                    ),
+                ]
+            )
+        ))
+
+
+class BucketsStack(CloudFormation):
+    code = 'buckets'
+
+    def get_template(self):
         t = Template()
         self.add_code_bucket(t)
         return t
