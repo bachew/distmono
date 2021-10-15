@@ -1,7 +1,7 @@
 from botocore.config import Config as BotoConfig
 from botocore.exceptions import ClientError
 from distmono.core import Deployable, Project
-from distmono.exceptions import BuildNotFoundError
+from distmono.exceptions import BuildNotFoundError, StackDoesNotExistError
 from distmono.util import sh
 from functools import cached_property
 from marshmallow import Schema, fields, ValidationError
@@ -147,14 +147,36 @@ class Stack(Deployable):
         c = self.get_stacker_config()
         stack = self.get_stacker_stack()
         stack_name = f'{c.namespace}{c.namespace_delimiter}{stack.code}'
-        return self.get_stack_outputs(stack_name)
+
+        try:
+            return self.boto.get_stack_outputs(stack_name)
+        except StackDoesNotExistError as e:
+            raise BuildNotFoundError(str(e))
+
+    @cached_property
+    def boto(self):
+        return BotoHelper(region=self.get_region())
+
+    def destroy(self):
+        stacker = self.get_stacker(self.context.destroy_dir)
+        stacker.destroy(self.get_config(), self.context.env)
+
+
+@attr.s(kw_only=True)
+class BotoHelper:
+    region = attr.ib()
+
+    def client(self, service):
+        config = BotoConfig(region_name=self.region)
+        return boto3.client(service, config=config)
 
     def get_stack_outputs(self, stack_name):
         try:
-            resp = self.cf.describe_stacks(StackName=stack_name)
-        except Exception as e:
-            if self.is_stack_does_not_exist_error(e):
-                raise BuildNotFoundError(str(e))
+            resp = self.cloudform.describe_stacks(StackName=stack_name)
+        except ClientError as e:
+            # XXX: No better way to detect "stack does not exist" error
+            if re.match(r'.*Stack .* does not exist.*', str(e)):
+                raise StackDoesNotExistError(str(e))
 
             raise
 
@@ -162,17 +184,5 @@ class Stack(Deployable):
         return {o['OutputKey']: o['OutputValue'] for o in outputs}
 
     @cached_property
-    def cf(self):
-        config = BotoConfig(region_name=self.get_region())
-        return boto3.client('cloudformation', config=config)
-
-    def is_stack_does_not_exist_error(self, e):
-        if not isinstance(e, ClientError):
-            return False
-
-        m = re.match(r'.*Stack .* does not exist.*', str(e))
-        return bool(m)
-
-    def destroy(self):
-        stacker = self.get_stacker(self.context.destroy_dir)
-        stacker.destroy(self.get_config(), self.context.env)
+    def cloudform(self):
+        return self.client('cloudformation')

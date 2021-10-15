@@ -1,4 +1,5 @@
 from distmono.core import load_project
+from pprint import pprint
 import click
 import subprocess
 
@@ -44,7 +45,8 @@ def cli_run(ctx, command):
 @click.argument('target', required=False)
 @click.pass_obj
 def cli_build(project, target):
-    project.build(target)
+    output = project.build(target)
+    pprint(output)
 
 
 @cli.command('destroy')

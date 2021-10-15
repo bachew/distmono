@@ -1,8 +1,11 @@
 from distmono import (
     AwsProject,
+    BotoHelper,
+    BuildNotFoundError,
     Deployable,
     Stack,
 )
+from distmono.util import sh
 from troposphere import (
     GetAtt,
     iam,
@@ -17,6 +20,7 @@ from functools import cached_property
 from pathlib import Path
 from awacs.aws import Action, Allow, PolicyDocument, Principal, Statement
 from awacs.sts import AssumeRole
+import hashlib
 import shutil
 
 
@@ -38,12 +42,10 @@ class ApiProject(AwsProject):
         return {
             'api-stack': 'function-stack',
             'function-stack': ['function-code', 'layer-code', 'access-stack'],
-            # 'function-code': 'buckets-stack',
-            # 'layer-code': 'buckets-stack',
+            'function-code': 'buckets-stack',
+            'layer-code': 'buckets-stack',
             'buckets-stack': 'access-stack',
             'invoke-function': 'function-stack',
-
-            'test': ['function-code', 'layer-code'],
         }
 
     def get_default_build_target(self):
@@ -108,31 +110,74 @@ class CodeMixin:
     def code_base_dir(self):
         return Path(__file__).parent / 'api-code'
 
+    def file_sha256(self, file):
+        file = Path(file)
+        h = hashlib.sha256()
+        h.update(file.read_bytes())
+        return h.hexdigest()
 
+
+# TODO: this is reusable, move into distmono and unit test
 class FunctionCode(Deployable, CodeMixin):
-    def build(self):
-        shutil.make_archive('code', 'zip', self.function_dir)
-        # TODO: hash and rename
-        # TODO: upload to bucket
-        # TODO: write to output dir
+    handler = 'handler.handle'
 
-    @property
-    def bucket_name(self):
-        # return 'testing'
-        return self.context.input['buckets-stack']['CodeBucketName']
+    def build(self):
+        zip_file = Path('code.zip')
+        shutil.make_archive(zip_file.stem, 'zip', self.function_dir)
+        zip_hash = self.file_sha256(zip_file)
+        self.upload_zip_file(zip_file, zip_hash)
+        zip_file.replace(self.out_zip_file)
+        self.out_zip_hash_file.write_text(zip_hash)
+
+    def upload_zip_file(self, zip_file, zip_hash):
+        key = self.get_s3_zip_key(zip_hash)
+        sh.print(f'Uploading {zip_file.name} to s3://{self.bucket_name}/{key}')
+        self.s3.upload_file(str(zip_file), self.bucket_name, key)
+
+    # TODO: implement is_build_outdated()
 
     def get_build_output(self):
-        # TODO: read from output dir
+        try:
+            zip_hash = self.out_zip_hash_file.read_text().strip()
+        except FileNotFoundError as e:
+            # BuildNotFoundError seems redundant, Builder and Destroyer should
+            # just catch and handle errors nicely
+            raise BuildNotFoundError(str(e))
+
         output = {
             'Bucket': self.bucket_name,
-            'Key': '',  # TODO
-            'Handler': 'handler.handle',
+            'Key': self.get_s3_zip_key(zip_hash),
+            'Handler': self.handler,
         }
         return output
 
     @cached_property
     def function_dir(self):
         return self.code_base_dir / 'function'
+
+    @cached_property
+    def s3(self):
+        return self.boto.client('s3')
+
+    @cached_property
+    def boto(self):
+        return BotoHelper(region=self.context.env['region'])
+
+    @property
+    def bucket_name(self):
+        return self.context.input['buckets-stack']['CodeBucketName']
+
+    def get_s3_zip_key(self, zip_hash):
+        return f'{zip_hash[32:]}.zip'
+
+    @cached_property
+    def out_zip_file(self):
+        return self.context.build_output_dir / 'code.zip'
+
+    @cached_property
+    def out_zip_hash_file(self):
+        zip_file = self.out_zip_file
+        return zip_file.parent / (zip_file.name + '.sha256')
 
 
 class LayerCode(Deployable, CodeMixin):
