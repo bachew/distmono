@@ -28,14 +28,13 @@ class ApiProject(AwsProject):
     def get_deployables(self):
         return {
             'api-stack': ApiStack,
+            'invoke-function': InvokeFunction,
             'function-stack': FunctionStack,
+            # 'function-stack': MockOutput,
             'function-code': FunctionCode,
             'layer-code': LayerCode,
             'buckets-stack': BucketsStack,
             'access-stack': AccessStack,
-            'invoke-function': InvokeFunction,
-
-            'test': Deployable,
         }
 
     def get_dependencies(self):
@@ -64,6 +63,34 @@ class ApiStack(Stack):
         return t
 
 
+class InvokeFunction(Deployable):
+    def build(self):
+        resp = self.lambd.invoke(FunctionName=self.function_name)
+        sh.pprint(resp)
+
+        for chunk in resp['Payload'].iter_lines():
+            sh.print(chunk)
+
+    @cached_property
+    def lambd(self):
+        return self.boto.client('lambda')
+
+    @cached_property
+    def boto(self):
+        # TODO: seems like AwsProject should merge into Project, makes more
+        # sense to have BotoHelper(context)
+        return BotoHelper(region=self.context.env['region'])
+
+    @cached_property
+    def function_name(self):
+        return self.context.input['function-stack']['FunctionName']
+
+
+class MockOutput(Deployable):
+    def get_build_output(self):
+        return {'RequestHandlerArn': 'arn:aws:lambda:ap-southeast-1:982086653134:function:distmono-sample-api-func-main'}
+
+
 class FunctionStack(Stack):
     code = 'func'
 
@@ -79,8 +106,8 @@ class FunctionStack(Stack):
     def add_function(self, t, layer):
         code_input = self.context.input['function-code']
         func = lambd.Function(
-            'RequestHandler',
-            FunctionName=Sub('${AWS::StackName}-main'),
+            'Function',
+            FunctionName=Sub('${AWS::StackName}-function'),
             Code=lambd.Code(
                 S3Bucket=code_input['Bucket'],
                 S3Key=code_input['Key'],
@@ -92,17 +119,12 @@ class FunctionStack(Stack):
             # Timeout=30,
         )
         t.add_resource(func)
-        t.add_output(Output('RequestHandlerArn', Value=GetAtt(func, 'Arn')))
+        t.add_output(Output('FunctionName', Value=Ref(func)))
         return func
 
     @property
     def app_role_arn(self):
         return self.context.input['access-stack']['AppRoleArn']
-
-
-class InvokeFunction(Deployable):
-    def build(self):
-        print(f'TODO: invoke function, input={self.context.input}')
 
 
 class CodeMixin:

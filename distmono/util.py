@@ -1,4 +1,5 @@
 from pathlib import PosixPath
+from pprint import pformat
 import sys
 import shlex
 import subprocess
@@ -60,6 +61,9 @@ class Shell:
             kwargs['file'] = sys.stderr
 
         print(str(msg), **kwargs)
+
+    def pprint(self, obj, **kwargs):
+        self.print(pformat(obj), **kwargs)
 
     def chdir(self, work_dir):
         from os import path as osp

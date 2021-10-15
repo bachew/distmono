@@ -1,6 +1,8 @@
-import library
+# import library
 
 
-def handle(self, event, context):
-    print(library.__file__)
-    return {}
+def handle(event, context):
+    # print(library.__file__)
+    return {
+        'testing': '123'
+    }
