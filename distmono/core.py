@@ -129,8 +129,22 @@ class Builder(Deployer):
 
         with sh.chdir(ctx.build_dir):
             if dpl.is_build_outdated():
+                build = True
+                sh.print(f'{target}: build outdated')
+            else:
+                build = False
+                sh.print(f'{target}: up-to-date')
+
+            # TODO
+            # skip = self.is_target_skipped(target)
+            # if skip:
+            #     sh.print(f'{target}: skipped')
+            #     build = False
+
+            if build:
                 dpl.build()
 
+        # TODO: catch error, report error, taking 'skip' into account
         output = dpl.get_build_output()
         # TODO: validate/filter
         return output

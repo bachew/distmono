@@ -5,9 +5,11 @@ from distmono import (
 )
 from distmono.util import BotoHelper, sh
 from troposphere import (
+    apigateway as apigw,
+    AWSHelperFn,
+    awslambda as lambd,
     GetAtt,
     iam,
-    awslambda as lambd,
     Output,
     Ref,
     s3,
@@ -18,31 +20,40 @@ from functools import cached_property
 from pathlib import Path
 from awacs.aws import Action, Allow, PolicyDocument, Principal, Statement
 from awacs.sts import AssumeRole
+from os import path as osp
+from textwrap import indent
 import hashlib
+import json
 import shutil
+import urllib.request
 
 
 class ApiProject(Project):
     def get_deployables(self):
         return {
             'api-stack': ApiStack,
-            'invoke-function': InvokeFunction,
             'function-stack': FunctionStack,
-            # 'function-stack': MockOutput,
             'function-code': FunctionCode,
             'layer-code': LayerCode,
             'buckets-stack': BucketsStack,
             'access-stack': AccessStack,
+
+            'call-api': CallApi,
+            'invoke-function': InvokeFunction,
+            'test': SimpleTest,
         }
 
     def get_dependencies(self):
         return {
-            'api-stack': 'function-stack',
+            'api-stack': ['function-stack', 'access-stack'],
             'function-stack': ['function-code', 'layer-code', 'access-stack'],
             'function-code': 'buckets-stack',
             'layer-code': 'buckets-stack',
             'buckets-stack': 'access-stack',
+
+            'call-api': 'api-stack',
             'invoke-function': 'function-stack',
+            'test': 'buckets-stack',
         }
 
     def get_default_build_target(self):
@@ -54,37 +65,127 @@ class ApiStack(Stack):
 
     def get_template(self):
         t = Template()
-        # TODO
-        t.add_resource(s3.Bucket(
-            'DummyBucket',
-            BucketName=Sub('${AWS::StackName}-dummy-bucket')))
+        api = self.add_api(t)
+        deployment = self.add_deployment(t, api)
+        stage = self.add_stage(t, api, deployment)
+        t.add_output(Output(
+            'ApiUrl',
+            Value=Sub(f'https://${{Api}}.execute-api.${{AWS::Region}}.amazonaws.com/{stage.StageName}')
+        ))
         return t
 
+    def add_api(self, t):
+        api = apigw.RestApi(
+            'Api',
+            Name=Sub('${AWS::StackName}-rest-api'),
+            EndpointConfiguration=apigw.EndpointConfiguration(
+                Types=['REGIONAL'],
+            ),
+            Body=self.get_api_spec(),
+        )
+        # TODO: add ApiKey, UsagePlan and UsagePlanKey
+        t.add_resource(api)
+        t.add_output(Output('ApiId', Value=Ref(api)))
+        return api
 
-class InvokeFunction(Deployable):
-    def build(self):
-        resp = self.lambd.invoke(FunctionName=self.function_name)
-        sh.pprint(resp)
+    def get_api_spec(self):
+        api_integration = self.get_api_integration()
+        api_spec = {
+            'swagger': '2.0',
+            'info': {
+                'title': Sub('${AWS::StackName}-rest-api'),
+                'description': 'API',
+                'version': '1.0.0'
+            },
+            'schemes': ['https'],
+            'produces': ['application/json'],
+            'securityDefinitions': {
+                'apiKeyAuth': {
+                    'in': 'header',
+                    'name': 'x-api-key',
+                    'type': 'apiKey'
+                }
+            },
+            'paths': {
+                '/status': {
+                    'x-amazon-apigateway-any-method': {
+                        'responses': {
+                            '200': {'description': 'OK'}
+                        },
+                        'x-amazon-apigateway-integration': api_integration
+                    }
+                },
+                '/{proxy+}': {
+                    'x-amazon-apigateway-any-method': {
+                        'parameters': [
+                            {
+                                'in': 'path',
+                                'name': 'proxy',
+                                'required': True,
+                                'type': 'string'
+                            }
+                        ],
+                        'responses': {
+                            '200': {'description': 'OK'}
+                        },
+                        'security': [
+                            {'apiKeyAuth': []}
+                        ],
+                        'x-amazon-apigateway-integration': api_integration
+                    }
+                }
+            }
+        }
+        return api_spec
 
-        for chunk in resp['Payload'].iter_lines():
-            sh.print(chunk)
+    def get_api_integration(self):
+        region = self.context.env['region']
+        app_role_arn = self.context.input['access-stack']['AppRoleArn']
+        function_arn = self.context.input['function-stack']['FunctionArn']
+        return {
+            'contentHandling': 'CONVERT_TO_TEXT',
+            'credentials': app_role_arn,
+            'httpMethod': 'POST',
+            'passthroughBehavior': 'when_no_templates',
+            'type': 'aws_proxy',
+            'uri': f'arn:aws:apigateway:{region}:lambda:path/2015-03-31/functions/{function_arn}/invocations'
+        }
 
-    @cached_property
-    def lambd(self):
-        return self.boto.client('lambda')
+    def add_deployment(self, t, api):
+        body_bytes = self.dump_api_body(api.Body).encode('utf')
+        body_hash = self.sha256(body_bytes)[16:]
+        deployment = apigw.Deployment(
+            # XXX: suffix body hash to force deployment whenever body changes
+            f'Deployment{body_hash}',
+            RestApiId=Ref(api),
+        )
+        t.add_resource(deployment)
+        return deployment
 
-    @cached_property
-    def boto(self):
-        return BotoHelper.from_context(self.context)
+    def dump_api_body(self, body):
+        class AwsHelperFnEncoder(json.JSONEncoder):
+            def default(self, obj):
+                if isinstance(obj, AWSHelperFn):
+                    return obj.data
 
-    @cached_property
-    def function_name(self):
-        return self.context.input['function-stack']['FunctionName']
+                return super().default(obj)
 
+        return json.dumps(body, cls=AwsHelperFnEncoder)
 
-class MockOutput(Deployable):
-    def get_build_output(self):
-        return {'RequestHandlerArn': 'arn:aws:lambda:ap-southeast-1:982086653134:function:distmono-sample-api-func-main'}
+    def sha256(self, data):
+        h = hashlib.sha256()
+        h.update(data)
+        return h.hexdigest()
+
+    def add_stage(self, t, api, deployment):
+        stage = apigw.Stage(
+            'Stage',
+            StageName='dev',  # doesn't matter
+            RestApiId=Ref(api),
+            DeploymentId=Ref(deployment),
+        )
+        t.add_resource(stage)
+        return stage
 
 
 class FunctionStack(Stack):
@@ -128,6 +229,7 @@ class FunctionStack(Stack):
         )
         t.add_resource(func)
         t.add_output(Output('FunctionName', Value=Ref(func)))
+        t.add_output(Output('FunctionArn', Value=GetAtt(func, 'Arn')))
         return func
 
     @property
@@ -178,7 +280,7 @@ class Code(Deployable):
 
     @cached_property
     def boto(self):
-        return BotoHelper(region=self.context.env['region'])
+        return BotoHelper.from_context(self.context)
 
     @property
     def bucket_name(self):
@@ -196,6 +298,13 @@ class Code(Deployable):
         zip_file = self.out_zip_file
         return zip_file.parent / (zip_file.name + '.sha256')
 
+    def destroy(self):
+        sh.print(f'Clearing S3 bucket {self.bucket_name!r}')
+        s3 = self.boto.resource('s3')
+        bucket = s3.Bucket(self.bucket_name)
+        # TODO: should only delete function or layer code
+        bucket.objects.all().delete()
+
 
 class FunctionCode(Code):
     def zip(self, stem):
@@ -212,10 +321,6 @@ class LayerCode(Code):
 
 class BucketsStack(Stack):
     stack_code = 'buckets'
-
-    def destroy(self):
-        # TODO: clear buckets so that deletion can complete
-        super().destroy()
 
     def get_template(self):
         t = Template()
@@ -308,3 +413,44 @@ class AccessStack(Stack):
         return PolicyDocument(
             Version='2012-10-17',
             Statement=statement)
+
+
+
+class CallApi(Deployable):
+    def build(self):
+        base_url = self.context.input['api-stack']['ApiUrl']
+        status_url = osp.join(base_url, 'status')
+        sh.print(f'GET {status_url}')
+
+        with urllib.request.urlopen(status_url) as r:
+            sh.print(indent(r.read().decode('utf8'), '  '))
+
+
+class InvokeFunction(Deployable):
+    def build(self):
+        resp = self.lambd.invoke(FunctionName=self.function_name)
+        sh.pprint(resp)
+
+        for chunk in resp['Payload'].iter_lines():
+            sh.print(chunk)
+
+    @cached_property
+    def lambd(self):
+        return self.boto.client('lambda')
+
+    @cached_property
+    def boto(self):
+        return BotoHelper.from_context(self.context)
+
+    @cached_property
+    def function_name(self):
+        return self.context.input['function-stack']['FunctionName']
+
+
+class SimpleTest(Deployable):
+    def build(self):
+        bucket_name = self.context.input['buckets-stack']['CodeBucketName']
+        sh.print(f'Clearing S3 bucket {bucket_name!r}')
+        s3 = BotoHelper.from_context(self.context).resource('s3')
+        bucket = s3.Bucket(bucket_name)
+        bucket.objects.all().delete()

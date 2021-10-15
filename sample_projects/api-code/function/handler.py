@@ -1,7 +1,12 @@
+import json
 import library
 
 
 def handle(event, context):
     return {
-        'library': library.__file__
+        'statusCode': 200,
+        'body': json.dumps({
+            'library': library.__file__
+        }),
+        # 'headers': {}
     }

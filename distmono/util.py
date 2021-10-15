@@ -145,8 +145,13 @@ class BotoHelper:
         return cls(region=context.env['region'])
 
     def client(self, service):
-        config = BotoConfig(region_name=self.region)
-        return boto3.client(service, config=config)
+        return boto3.client(service, config=self.get_config())
+
+    def resource(self, service):
+        return boto3.resource(service, config=self.get_config())
+
+    def get_config(self):
+        return BotoConfig(region_name=self.region)
 
     def get_stack_outputs(self, stack_name):
         try:
