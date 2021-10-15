@@ -279,50 +279,22 @@ class DeploymentGraph:
 
 @attr.s(kw_only=True)
 class Stacker:
-    work_dir = attr.ib()
     region = attr.ib()
-    recreate_failed = attr.ib(default=True)
+    config = attr.ib()
+    config_filename = attr.ib(default='config.yaml')
 
-    def build(self, config, env):
-        cmd = ['stacker', 'build', '-r', self.region]
-
-        if self.recreate_failed:
-            cmd.append('--recreate-failed')
-
-        with sh.chdir(self.work_dir):
-            config_file, env_file = self.generate_input_files(config, env)
-            cmd.append(env_file)
-            cmd.append(config_file)
-            sh.run(cmd)
-
-    def destroy(self, config, env):
-        cmd = ['stacker', 'destroy', '-r', self.region, '--force']
-
-        with sh.chdir(self.work_dir):
-            config_file, env_file = self.generate_input_files(config, env)
-            cmd.append(env_file)
-            cmd.append(config_file)
-            sh.run(cmd)
-
-    def generate_input_files(self, config, env):
-        self.validate_namespace(config, env)
-        config_file = Path('config.yaml')
-        config_file.write_text(self.get_config_yaml(config))
-        env_file = Path('env.yaml')
-        env_file.write_text(yaml.dump(env))
-        return config_file, env_file
-
-    def get_config_yaml(self, config):
-        stacks = [self.get_stack_yaml_obj(s) for s in config.stacks]
-        config = {
+    def generate_input_files(self):
+        config = self.config
+        stacks = [self.generate_stack_yaml(s) for s in config.stacks]
+        gen_config = {
             'namespace': config.namespace,
             'stacker_bucket': config.stacker_bucket,
             'stacks': stacks,
             'tags': config.tags,
         }
-        return yaml.dump(config)
+        Path(self.config_filename).write_text(yaml.dump(gen_config))
 
-    def get_stack_yaml_obj(self, stack):
+    def generate_stack_yaml(self, stack):
         template_file = Path(f'stack.yaml')
         template_file.write_text(stack.template.to_yaml())
         return {
@@ -331,17 +303,13 @@ class Stacker:
             'tags': stack.tags,
         }
 
-    def validate_namespace(self, config, env):
-        ns = 'namespace'
+    def build(self):
+        cmd = ['stacker', 'build', '-r', self.region, '--recreate-failed', self.config_filename]
+        sh.run(cmd)
 
-        if ns not in env:
-            raise ValueError("'namespace' is mandatory in environment")
-
-        if config.namespace != env[ns]:
-            raise ValueError(
-                f'Stacker config namespace {config.namespace!r}'
-                f' and environment namespace {env[ns]!r} are different'
-                f', they should be the same')
+    def destroy(self):
+        cmd = ['stacker', 'destroy', '-r', self.region, '--force', self.config_filename]
+        sh.run(cmd)
 
 
 @attr.s(kw_only=True)
@@ -360,14 +328,39 @@ class StackerStack:
     tags = attr.ib(default=attr.Factory(dict), kw_only=True)
 
 
-# TODO: implement fully Deployable methods
 class Stack(Deployable):
     def build(self):
-        stacker = self.get_stacker(self.context.build_dir)
-        stacker.build(self.get_stacker_config(), self.context.env)
+        stacker = self.get_stacker()
+        stacker.generate_input_files()
+        stacker.build()
 
-    def get_stacker(self, work_dir):
-        return Stacker(work_dir=work_dir, region=self.get_region())
+        build_dir = self.context.build_dir
+
+        stack_outputs = self.get_stack_outputs()
+        stack_outputs_file = build_dir / self.out_stack_outputs_file.name
+        stack_outputs_file.write_text(yaml.dump(stack_outputs))
+
+        # build_hash = sh.sha256(['config.yaml', 'env.yaml', 'stack.yaml'])
+        # build_hash_file = build_dir / self.out_build_hash_file.name
+        # build_hash_file.write_text(build_hash)
+
+        stack_outputs_file.replace(self.out_stack_outputs_file)
+        # build_hash_file.replace(self.out_build_hash_file)
+
+    def get_stack_outputs(self):
+        c = self.get_stacker_config()
+        stack_code = self.get_stack_code()
+        stack_name = f'{c.namespace}{c.namespace_delimiter}{stack_code}'
+        return self.boto.get_stack_outputs(stack_name)
+
+    @cached_property
+    def build_hash_file(self):
+        return self.context.build_dir / 'build-hash'
+
+    def get_stacker(self):
+        return Stacker(
+            region=self.get_region(),
+            config=self.get_stacker_config())
 
     def get_stacker_config(self):
         return StackerConfig(
@@ -395,19 +388,30 @@ class Stack(Deployable):
     def get_tags(self):
         return {}
 
-    def get_build_output(self):
-        c = self.get_stacker_config()
-        stack = self.get_stacker_stack()
-        stack_name = f'{c.namespace}{c.namespace_delimiter}{stack.code}'
-        return self.boto.get_stack_outputs(stack_name)
+    @cached_property
+    def out_stack_outputs_file(self):
+        return self.context.build_output_dir / 'stack-outputs.yaml'
+
+    @cached_property
+    def out_build_hash_file(self):
+        return self.context.build_output_dir / 'build-hash.txt'
 
     @cached_property
     def boto(self):
         return BotoHelper(region=self.get_region())
 
+    def get_build_output(self):
+        return yaml.load(self.out_stack_outputs_file.read_text())
+
+    # TODO
+    # def is_build_outdated(self):
+    #     # TODO: build() without running stacker
+    #     return self.build_hash_file.read_text() != self.out_build_hash_file.read_text()
+
     def destroy(self):
-        stacker = self.get_stacker(self.context.destroy_dir)
-        stacker.destroy(self.get_config(), self.context.env)
+        stacker = self.get_stacker()
+        stacker.generate_input_files()
+        stacker.destroy()
 
 
 def load_project(filename):
