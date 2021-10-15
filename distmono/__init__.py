@@ -3,7 +3,5 @@ from distmono.core import (  # noqa
     Deployable,
     Stack,
     Stacker,
-    StackerConfig,
-    StackerStack
 )
 from distmono.exceptions import *  # noqa
