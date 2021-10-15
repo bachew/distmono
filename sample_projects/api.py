@@ -101,19 +101,31 @@ class FunctionStack(Stack):
         return t
 
     def add_layer(self, t):
-        pass  # TODO: https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-lambda-layerversion.html
+        input_code = self.context.input['layer-code']
+        layer = lambd.LayerVersion(
+            'Layer',
+            LayerName=Sub('${AWS::StackName}-layer'),
+            CompatibleRuntimes=['python3.7'],
+            Content=lambd.Content(
+                S3Bucket=input_code['Bucket'],
+                S3Key=input_code['Key'],
+            ),
+        )
+        t.add_resource(layer)
+        return layer
 
     def add_function(self, t, layer):
-        code_input = self.context.input['function-code']
+        input_code = self.context.input['function-code']
         func = lambd.Function(
             'Function',
             FunctionName=Sub('${AWS::StackName}-function'),
             Code=lambd.Code(
-                S3Bucket=code_input['Bucket'],
-                S3Key=code_input['Key'],
+                S3Bucket=input_code['Bucket'],
+                S3Key=input_code['Key'],
             ),
+            Layers=[Ref(layer)],
             Runtime='python3.7',
-            Handler=code_input['Handler'],
+            Handler='handler.handle',
             Role=self.app_role_arn,
             # MemorySize=128,
             # Timeout=30,
@@ -127,29 +139,28 @@ class FunctionStack(Stack):
         return self.context.input['access-stack']['AppRoleArn']
 
 
-class CodeMixin:
+# TODO: this is reusable, move into distmono and unit test
+class Code(Deployable):
     @cached_property
     def code_base_dir(self):
         return Path(__file__).parent / 'api-code'
+
+    def build(self):
+        zip_file = Path('code.zip')
+        self.zip(zip_file.stem)
+        zip_hash = self.file_sha256(zip_file)
+        self.upload_zip_file(zip_file, zip_hash)
+        zip_file.replace(self.out_zip_file)
+        self.out_zip_hash_file.write_text(zip_hash)
+
+    def zip(self, stem):
+        raise NotImplementedError
 
     def file_sha256(self, file):
         file = Path(file)
         h = hashlib.sha256()
         h.update(file.read_bytes())
         return h.hexdigest()
-
-
-# TODO: this is reusable, move into distmono and unit test
-class FunctionCode(Deployable, CodeMixin):
-    handler = 'handler.handle'
-
-    def build(self):
-        zip_file = Path('code.zip')
-        shutil.make_archive(zip_file.stem, 'zip', self.function_dir)
-        zip_hash = self.file_sha256(zip_file)
-        self.upload_zip_file(zip_file, zip_hash)
-        zip_file.replace(self.out_zip_file)
-        self.out_zip_hash_file.write_text(zip_hash)
 
     def upload_zip_file(self, zip_file, zip_hash):
         key = self.get_s3_zip_key(zip_hash)
@@ -169,13 +180,8 @@ class FunctionCode(Deployable, CodeMixin):
         output = {
             'Bucket': self.bucket_name,
             'Key': self.get_s3_zip_key(zip_hash),
-            'Handler': self.handler,
         }
         return output
-
-    @cached_property
-    def function_dir(self):
-        return self.code_base_dir / 'function'
 
     @cached_property
     def s3(self):
@@ -202,15 +208,17 @@ class FunctionCode(Deployable, CodeMixin):
         return zip_file.parent / (zip_file.name + '.sha256')
 
 
-class LayerCode(Deployable, CodeMixin):
-    def build(self):
-        # TODO: clone layer dir and install requirements in it before zipping
-        shutil.make_archive('layer', 'zip', self.layer_dir, 'python')
-        # TODO: follow FunctionCode
+class FunctionCode(Code):
+    def zip(self, stem):
+        function_dir = self.code_base_dir / 'function'
+        shutil.make_archive(stem, 'zip', function_dir)
 
-    @cached_property
-    def layer_dir(self):
-        return self.code_base_dir / 'layer'
+
+class LayerCode(Code):
+    def zip(self, stem):
+        # TODO: move to build dir, download requirements
+        layer_dir = self.code_base_dir / 'layer'
+        shutil.make_archive(stem, 'zip', layer_dir, 'python')
 
 
 class BucketsStack(Stack):
