@@ -3,5 +3,5 @@ import library
 
 def handle(event, context):
     return {
-        'library': 'library.__file__'
+        'library': library.__file__
     }

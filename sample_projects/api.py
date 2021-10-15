@@ -123,8 +123,8 @@ class FunctionStack(Stack):
             Runtime='python3.7',
             Handler='handler.handle',
             Role=self.app_role_arn,
-            # MemorySize=128,
-            # Timeout=30,
+            MemorySize=128,
+            Timeout=30,
         )
         t.add_resource(func)
         t.add_output(Output('FunctionName', Value=Ref(func)))
@@ -213,6 +213,10 @@ class LayerCode(Code):
 class BucketsStack(Stack):
     stack_code = 'buckets'
 
+    def destroy(self):
+        # TODO: clear buckets so that deletion can complete
+        super().destroy()
+
     def get_template(self):
         t = Template()
         self.add_code_bucket(t)
@@ -220,7 +224,7 @@ class BucketsStack(Stack):
 
     def add_code_bucket(self, t):
         bucket = s3.Bucket(
-            'CodeBucket2',
+            'CodeBucket',
             BucketName=Sub('${AWS::StackName}-code'),
             AccessControl=s3.BucketOwnerFullControl,
             LifecycleConfiguration=s3.LifecycleConfiguration(
@@ -251,6 +255,7 @@ class AccessStack(Stack):
     def add_app_policy(self, t):
         policy = iam.ManagedPolicy(
             'AppPolicy',
+            ManagedPolicyName=Sub('${AWS::StackName}-app-policy'),
             PolicyDocument=self.policy_document([
                 Statement(
                     Effect=Allow,
@@ -270,7 +275,7 @@ class AccessStack(Stack):
     def add_app_role(self, t, app_policy):
         role = iam.Role(
             'AppRole',
-            RoleName='app',
+            RoleName=Sub('${AWS::StackName}-app-role'),
             AssumeRolePolicyDocument=self.policy_document([
                 Statement(
                     Effect=Allow,

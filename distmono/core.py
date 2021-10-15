@@ -9,6 +9,7 @@ from functools import cached_property
 from marshmallow import Schema, fields, ValidationError
 from pathlib import Path
 import attr
+import hashlib
 import networkx as nx
 import runpy
 import shutil
@@ -126,8 +127,8 @@ class Builder(Deployer):
         dpl_cls = self.get_deployable_cls(target)
         dpl = dpl_cls(ctx)
 
-        if dpl.is_build_outdated():
-            with sh.chdir(ctx.build_dir):
+        with sh.chdir(ctx.build_dir):
+            if dpl.is_build_outdated():
                 dpl.build()
 
         output = dpl.get_build_output()
@@ -165,6 +166,10 @@ class Destroyer(Deployer):
 
         with sh.chdir(ctx.destroy_dir):
             dpl.destroy()
+
+            # TODO: sh.remove()
+            if ctx.build_output_dir.exists():
+                shutil.rmtree(ctx.build_output_dir)
 
     def get_successor_outputs(self, target):
         outputs = {}
@@ -288,25 +293,25 @@ class Stacker:
 
     region = attr.ib()
     config_file = attr.ib()
-    stack_file = attr.ib()
+    template_file = attr.ib()
 
     @config_file.default
     def default_config_file(self):
         return Path('config.yaml')
 
-    @stack_file.default
-    def default_stack_file(self):
+    @template_file.default
+    def default_template_file(self):
         return Path('stack.yaml')
 
     def generate_input_files(self):
-        self.stack_file.write_text(self.template.to_yaml())
+        self.template_file.write_text(self.template.to_yaml())
         config = {
             'namespace': self.namespace,
             'stacker_bucket': self.stacker_bucket,
             'stacks': [
                 {
                     'name': self.stack_code,
-                    'template_path': str(self.stack_file),
+                    'template_path': str(self.template_file),
                     'tags': self.tags,
                 }
             ],
@@ -333,9 +338,8 @@ class Stacker:
 
 class Stack(Deployable):
     def build(self):
-        stacker = self.get_stacker()
-        stacker.generate_input_files()
-        stacker.build()
+        self.generate_stacker_files()
+        self.stacker.build()
 
         build_dir = self.context.build_dir
 
@@ -343,21 +347,33 @@ class Stack(Deployable):
         stack_outputs_file = build_dir / self.out_stack_outputs_file.name
         stack_outputs_file.write_text(yaml.dump(stack_outputs))
 
-        # build_hash = sh.sha256(['config.yaml', 'env.yaml', 'stack.yaml'])
-        # build_hash_file = build_dir / self.out_build_hash_file.name
-        # build_hash_file.write_text(build_hash)
-
         stack_outputs_file.replace(self.out_stack_outputs_file)
-        # build_hash_file.replace(self.out_build_hash_file)
+        self.build_hash_file.replace(self.out_build_hash_file)
+
+    @property
+    def build_hash_file(self):
+        return self.context.build_dir / 'build-hash.txt'
+
+    def generate_stacker_files(self):
+        s = self.stacker
+        s.generate_input_files()
+        self.build_hash_file.write_text(self.get_build_hash())
+
+    def get_build_hash(self):
+        h = hashlib.sha256()
+        s = self.stacker
+        h.update(s.config_file.read_bytes())
+        h.update(s.template_file.read_bytes())
+        return h.hexdigest()
 
     def get_stack_outputs(self):
-        s = self.get_stacker()
+        s = self.stacker
         stack_name = f'{s.namespace}{s.namespace_delimiter}{s.stack_code}'
         return self.boto.get_stack_outputs(stack_name)
 
     @cached_property
-    def build_hash_file(self):
-        return self.context.build_dir / 'build-hash'
+    def stacker(self):
+        return self.get_stacker()
 
     def get_stacker(self):
         return Stacker(
@@ -389,7 +405,7 @@ class Stack(Deployable):
 
     @cached_property
     def out_build_hash_file(self):
-        return self.context.build_output_dir / 'build-hash.txt'
+        return self.context.build_output_dir / self.build_hash_file.name
 
     @cached_property
     def boto(self):
@@ -398,13 +414,18 @@ class Stack(Deployable):
     def get_build_output(self):
         return yaml.safe_load(self.out_stack_outputs_file.read_text())
 
-    # TODO
-    # def is_build_outdated(self):
-    #     # TODO: build() without running stacker
-    #     return self.build_hash_file.read_text() != self.out_build_hash_file.read_text()
+    def is_build_outdated(self):
+        try:
+            previous_hash = self.out_build_hash_file.read_text()
+        except FileNotFoundError:
+            return True
+
+        self.generate_stacker_files()
+        current_hash = self.build_hash_file.read_text()
+        return current_hash != previous_hash
 
     def destroy(self):
-        stacker = self.get_stacker()
+        stacker = self.stacker
         stacker.generate_input_files()
         stacker.destroy()
 
