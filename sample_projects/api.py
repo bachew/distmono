@@ -1,11 +1,10 @@
 from distmono import (
-    AwsProject,
-    BotoHelper,
+    Project,
     BuildNotFoundError,
     Deployable,
     Stack,
 )
-from distmono.util import sh
+from distmono.util import BotoHelper, sh
 from troposphere import (
     GetAtt,
     iam,
@@ -24,7 +23,7 @@ import hashlib
 import shutil
 
 
-class ApiProject(AwsProject):
+class ApiProject(Project):
     def get_deployables(self):
         return {
             'api-stack': ApiStack,
@@ -77,9 +76,7 @@ class InvokeFunction(Deployable):
 
     @cached_property
     def boto(self):
-        # TODO: seems like AwsProject should merge into Project, makes more
-        # sense to have BotoHelper(context)
-        return BotoHelper(region=self.context.env['region'])
+        return BotoHelper.from_context(self.context)
 
     @cached_property
     def function_name(self):

@@ -1,5 +1,12 @@
+from botocore.config import Config as BotoConfig
+from botocore.exceptions import ClientError
+from distmono.exceptions import StackDoesNotExistError
+from functools import cached_property
 from pathlib import PosixPath
 from pprint import pformat
+import attr
+import boto3
+import re
 import sys
 import shlex
 import subprocess
@@ -127,3 +134,33 @@ class Shell:
 
 
 sh = Shell()
+
+
+@attr.s(kw_only=True)
+class BotoHelper:
+    region = attr.ib()
+
+    @classmethod
+    def from_context(cls, context):
+        return cls(region=context.env['region'])
+
+    def client(self, service):
+        config = BotoConfig(region_name=self.region)
+        return boto3.client(service, config=config)
+
+    def get_stack_outputs(self, stack_name):
+        try:
+            resp = self.cloudform.describe_stacks(StackName=stack_name)
+        except ClientError as e:
+            # XXX: No better way to detect "stack does not exist" error
+            if re.match(r'.*Stack .* does not exist.*', str(e)):
+                raise StackDoesNotExistError(str(e))
+
+            raise
+
+        outputs = resp['Stacks'][0].get('Outputs', [])
+        return {o['OutputKey']: o['OutputValue'] for o in outputs}
+
+    @cached_property
+    def cloudform(self):
+        return self.client('cloudformation')

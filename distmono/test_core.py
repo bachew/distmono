@@ -1,8 +1,15 @@
 from distmono.core import Deployable, DeploymentGraph, load_project, Project
-from distmono.exceptions import CircularDependencyError, ConfigError
-from pathlib import Path
+from distmono.exceptions import DistmonoError, ConfigError
 from textwrap import dedent
 import pytest
+
+
+@pytest.fixture
+def env():
+    return {
+        'namespace': 'distmono',
+        'region': 'ap-southeast-1',
+    }
 
 
 class TestLoadProject:
@@ -17,8 +24,14 @@ class TestLoadProject:
             from distmono.core import Project
 
             def get_project():
-                project = Project(project_dir='/tmp')
+                project = Project(project_dir='/tmp', env=get_env())
                 return project
+
+            def get_env():
+                return {
+                    'namespace': 'distmono',
+                    'region': 'ap-southeast-1',
+                }
         '''))
 
     def test_missing_func(self, tmp_path):
@@ -65,7 +78,7 @@ class TestDeploymentGraph:
     def test_cycles(self):
         msg = r'Circular dependency found: .*-\>.*-\>'
 
-        with pytest.raises(CircularDependencyError, match=msg):
+        with pytest.raises(DistmonoError, match=msg):
             self.graph(['a', 'b', 'c'], {
                 'a': 'b',
                 'b': 'c',
@@ -107,10 +120,7 @@ class TestDeploymentGraph:
 
 class TestBuildDependency:
     @pytest.fixture
-    def project(self, tmp_path):
-        return self.create_project(tmp_path)
-
-    def create_project(self, project_dir):
+    def project(self, tmp_path, env):
         class TestProject(Project):
             log = []
 
@@ -166,7 +176,7 @@ class TestBuildDependency:
             }
             build_output = {'cat': 1}
 
-        return TestProject(project_dir=project_dir)
+        return TestProject(project_dir=tmp_path, env=env)
 
     def test_build(self, project):
         output = project.build()
@@ -184,7 +194,7 @@ class TestBuildDependency:
 
 class TestBuildDirs:
     @pytest.fixture
-    def project(self, tmp_path):
+    def project(self, tmp_path, env):
         class TestProject(Project):
             def get_deployables(self):
                 return {
@@ -227,7 +237,7 @@ class TestBuildDirs:
         class B(Log):
             pass
 
-        return TestProject(project_dir=tmp_path)
+        return TestProject(project_dir=tmp_path, env=env)
 
     def test_build(self, project):
         project.build()
