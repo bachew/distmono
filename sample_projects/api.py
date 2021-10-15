@@ -1,6 +1,5 @@
 from distmono import (
     Project,
-    BuildNotFoundError,
     Deployable,
     Stack,
 )
@@ -51,7 +50,7 @@ class ApiProject(Project):
 
 
 class ApiStack(Stack):
-    code = 'api'
+    stack_code = 'api'
 
     def get_template(self):
         t = Template()
@@ -89,7 +88,7 @@ class MockOutput(Deployable):
 
 
 class FunctionStack(Stack):
-    code = 'func'
+    stack_code = 'func'
 
     def get_template(self):
         t = Template()
@@ -167,18 +166,11 @@ class Code(Deployable):
     # TODO: implement is_build_outdated()
 
     def get_build_output(self):
-        try:
-            zip_hash = self.out_zip_hash_file.read_text().strip()
-        except FileNotFoundError as e:
-            # BuildNotFoundError seems redundant, Builder and Destroyer should
-            # just catch and handle errors nicely
-            raise BuildNotFoundError(str(e))
-
-        output = {
+        zip_hash = self.out_zip_hash_file.read_text().strip()
+        return {
             'Bucket': self.bucket_name,
             'Key': self.get_s3_zip_key(zip_hash),
         }
-        return output
 
     @cached_property
     def s3(self):
@@ -219,7 +211,7 @@ class LayerCode(Code):
 
 
 class BucketsStack(Stack):
-    code = 'buckets'
+    stack_code = 'buckets'
 
     def get_template(self):
         t = Template()
@@ -248,7 +240,7 @@ class BucketsStack(Stack):
 
 
 class AccessStack(Stack):
-    code = 'access'
+    stack_code = 'access'
 
     def get_template(self):
         t = Template()

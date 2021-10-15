@@ -10,9 +10,5 @@ class CircularDependencyError(DistmonoError):
     pass
 
 
-class BuildNotFoundError(DistmonoError):
-    pass
-
-
 class StackDoesNotExistError(DistmonoError):
     pass

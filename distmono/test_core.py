@@ -1,5 +1,5 @@
 from distmono.core import Deployable, DeploymentGraph, load_project, Project
-from distmono.exceptions import DistmonoError, ConfigError
+from distmono.exceptions import CircularDependencyError, ConfigError
 from textwrap import dedent
 import pytest
 
@@ -78,7 +78,7 @@ class TestDeploymentGraph:
     def test_cycles(self):
         msg = r'Circular dependency found: .*-\>.*-\>'
 
-        with pytest.raises(DistmonoError, match=msg):
+        with pytest.raises(CircularDependencyError, match=msg):
             self.graph(['a', 'b', 'c'], {
                 'a': 'b',
                 'b': 'c',

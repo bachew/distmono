@@ -1,6 +1,5 @@
 from copy import deepcopy
 from distmono.exceptions import (
-    BuildNotFoundError,
     CircularDependencyError,
     ConfigError,
     StackDoesNotExistError,
@@ -77,10 +76,6 @@ class Deployable:
         pass
 
     def get_build_output(self):
-        '''
-        Returns the result of previous build, throws BuildNotFoundError if it
-        wasn't built before.
-        '''
         return {}
 
     def is_build_outdated(self):
@@ -184,8 +179,11 @@ class Destroyer(Deployer):
         ctx = Context.create(self.project, target, input)
         dpl_cls = self.get_deployable_cls(target)
         dpl = dpl_cls(ctx)
-        # TODO: rethrow BuildNotFoundError with elaboration
-        return dpl.get_build_output()
+
+        try:
+            return dpl.get_build_output()
+        except Exception:
+            raise  # TODO: rethrow with friendlier message
 
 
 @attr.s(kw_only=True)
@@ -378,7 +376,7 @@ class Stack(Deployable):
 
     def get_stacker_stack(self):
         return StackerStack(
-            code=self.get_code(),
+            code=self.get_stack_code(),
             template=self.get_template(),
             tags=self.get_tags())
 
@@ -388,8 +386,8 @@ class Stack(Deployable):
     def get_region(self):
         return self.context.env['region']
 
-    def get_code(self):
-        return self.code
+    def get_stack_code(self):
+        return self.stack_code
 
     def get_template(self):
         raise NotImplementedError
@@ -401,11 +399,7 @@ class Stack(Deployable):
         c = self.get_stacker_config()
         stack = self.get_stacker_stack()
         stack_name = f'{c.namespace}{c.namespace_delimiter}{stack.code}'
-
-        try:
-            return self.boto.get_stack_outputs(stack_name)
-        except StackDoesNotExistError as e:
-            raise BuildNotFoundError(str(e))
+        return self.boto.get_stack_outputs(stack_name)
 
     @cached_property
     def boto(self):
