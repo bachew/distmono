@@ -1,5 +1,191 @@
+<!DOCTYPE html>
 <html>
-<body>
-<h1>Testing</h1>
-</body>
+  <head>
+    <title>Distmono</title>
+    <meta charset="utf-8">
+    <style>
+      @import url(https://fonts.googleapis.com/css?family=Yanone+Kaffeesatz);
+      @import url(https://fonts.googleapis.com/css?family=Droid+Serif:400,700,400italic);
+      @import url(https://fonts.googleapis.com/css?family=Ubuntu+Mono:400,700,400italic);
+
+      body { font-family: 'Droid Serif'; }
+      h1, h2, h3 {
+        font-family: 'Yanone Kaffeesatz';
+        font-weight: normal;
+      }
+      .remark-code, .remark-inline-code { font-family: 'Ubuntu Mono'; }
+    </style>
+  </head>
+  <body>
+    <textarea id="source">
+
+class: center, middle
+
+# Distmono
+
+Config-centric deployment is a hindrance, we should get rid of it!
+
+---
+# Before we begin
+
+Code and slides in [github.com/bachew/distmono](https://github.com/bachew/distmono).
+
+These simple slides uses [github.com/gnab/remark](https://github.com/gnab/remark).
+
+---
+# What hindrance?
+
+--
+Let's begin with a simple use case, a very common one:
+
+--
+![components.png](img/components.png)
+
+---
+# Config-centric deployment
+
+The promises of config-centric deployment:
+
+--
+- Easy to configure:
+
+```yaml
+namespace: ${namespace}
+
+stacks:
+  - name: api
+    template_path: templates/api.yaml
+```
+
+--
+- A command to deploy everything:
+
+```console
+$ stacker build env.yaml config.yaml
+```
+
+--
+- Another command to undeploy all:
+
+```console
+$ stacker destroy env.yaml config.yaml
+```
+
+---
+# Actually it doesn't work
+
+--
+![code-bucket-highlight.png](img/code-bucket-highlight.png)
+
+Remember function code comes from a S3 bucket?
+
+--
+
+The order of work should be:
+
+1. Deploy only `CodeBucket`
+2. Package code zip and upload to `CodeBucket`
+3. Deploy the rest
+
+---
+# Config changes
+
+Split template into 2:
+
+```yaml
+namespace: ${namespace}
+
+stacks:
+  - name: api
+    template_path: templates/api.yaml
+    variables:
+      CodeBucket: ${output code-bucket::Bucket}
+      CodeKey: ${output code-bucket::Key}
+  - name: code-bucket
+    template_path: templates/code-bucket.yaml
+```
+
+---
+# Deployment script changes
+
+```bash
+# Deploy code bucket first
+stacker build env.yaml config.yaml -t code-bucket
+```
+
+--
+```bash
+# Zip function code and upload to the bucket
+cd code
+zip ../code.zip *
+cd ..
+code_bucket="$(./get-code-bucket)"
+# Cannot use same filename if you want CloudFormation to update the function
+code_zip="$(sha256sum code.zip).zip"
+code_s3_path="s3://$code_bucket/$code_zip"
+aws s3 cp code.zip "$code_s3_path"
+```
+
+--
+```bash
+# Deploy api template to use the uploaded code
+./update-env-code-zip env.yaml "$code_s3_path"
+stacker build env.yaml config.yaml -t api
+```
+
+---
+# Clearly it's not working
+
+--
+- A simple example requires so many scripts and the bugs it entails
+  - What happens if the application is more complex, like in real life?
+
+--
+- Deployment is slow, code will be upload on every deployment
+  - Developer has to find another way during development
+
+--
+- The scripts are not reusable, i.e. you create another API
+
+--
+- You'll end up with a lot of messy scripts
+  - Python scripts can help but not for long
+
+---
+# Code-centric deployment
+
+--
+
+The opposite of config-centric deployment.
+
+--
+
+Config is allowed but on the highest level.
+
+--
+
+Any "script" written can easily be packaged as library and reused.
+
+---
+# Let's start
+
+Clone the repo:
+
+```console
+$ git clone git@github.com:bachew/distmono.git
+$ cd distmono
+```
+
+--
+
+Configure credentials:
+
+TODO
+    </textarea>
+    <script src="https://remarkjs.com/downloads/remark-latest.min.js">
+    </script>
+    <script>
+      var slideshow = remark.create();
+    </script>
+  </body>
 </html>
