@@ -9,6 +9,7 @@ pip install -r <(echo "
 attrs
 awscli
 boto3
+cached_property
 click
 marshmallow
 networkx

@@ -1,7 +1,7 @@
 from botocore.config import Config as BotoConfig
 from botocore.exceptions import ClientError
+from cached_property import cached_property
 from distmono.exceptions import StackDoesNotExistError
-from functools import cached_property
 from pathlib import PosixPath
 from pprint import pformat
 import attr

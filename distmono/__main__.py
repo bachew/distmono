@@ -7,7 +7,7 @@ import subprocess
 @click.group()
 @click.option('-p', '--project-env', 'file',
               required=True,
-              help='Project and env file (e.g. project-env/simple-ci.py)')
+              help='Project and env file (e.g. project-env/api.py)')
 @click.pass_context
 def cli(ctx, file):
     ctx.obj = load_project(file)

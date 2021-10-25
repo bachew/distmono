@@ -4,6 +4,7 @@ from distmono import (
     Stack,
 )
 from distmono.util import BotoHelper, sh
+from cached_property import cached_property
 from troposphere import (
     apigateway as apigw,
     AWSHelperFn,
@@ -16,7 +17,6 @@ from troposphere import (
     Sub,
     Template,
 )
-from functools import cached_property
 from pathlib import Path
 from awacs.aws import Action, Allow, PolicyDocument, Principal, Statement
 from awacs.sts import AssumeRole

@@ -1,11 +1,11 @@
 from copy import deepcopy
+from cached_property import cached_property
 from distmono.exceptions import (
     CircularDependencyError,
     ConfigError,
     StackDoesNotExistError,
 )
 from distmono.util import BotoHelper, sh
-from functools import cached_property
 from marshmallow import Schema, fields, ValidationError
 from pathlib import Path
 import attr
