@@ -23,22 +23,21 @@ class: center, middle
 
 # Distmono
 
-Config-centric deployment is a hindrance, we should get rid of it!
+Better way to deploy to AWS
 
 ---
 # Before we begin
 
-Code and slides in [github.com/bachew/distmono](https://github.com/bachew/distmono).
+Everything in [github.com/bachew/distmono](https://github.com/bachew/distmono)
 
-These simple slides uses [github.com/gnab/remark](https://github.com/gnab/remark).
+Slides made with [github.com/gnab/remark](https://github.com/gnab/remark)
 
 ---
-# What hindrance?
+# What is the problem?
 
 --
-Let's begin with a simple use case, a very common one:
+Let's begin with a simple and common use case:
 
---
 ![components.png](img/components.png)
 
 ---
@@ -60,14 +59,14 @@ stacks:
 --
 - A command to deploy everything:
 
-```console
+```bash
 $ stacker build env.yaml config.yaml
 ```
 
 --
 - Another command to undeploy all:
 
-```console
+```bash
 $ stacker destroy env.yaml config.yaml
 ```
 
@@ -84,8 +83,16 @@ Remember function code comes from a S3 bucket?
 The order of work should be:
 
 1. Deploy only `CodeBucket`
+
+--
 2. Package code zip and upload to `CodeBucket`
+
+--
 3. Deploy the rest
+
+--
+
+Changes required...
 
 ---
 # Config changes
@@ -134,53 +141,177 @@ stacker build env.yaml config.yaml -t api
 ```
 
 ---
-# Clearly it's not working
+# It's a problem
 
 --
-- A simple example requires so many scripts and the bugs it entails
-  - What happens if the application is more complex, like in real life?
+Remember this is a very simple use case
 
 --
-- Deployment is slow, code will be upload on every deployment
-  - Developer has to find another way during development
+
+What happens if it's 20x more complex?
 
 --
-- The scripts are not reusable, i.e. you create another API
+
+Deployment is slow, cannot deploy only updated parts
 
 --
-- You'll end up with a lot of messy scripts
-  - Python scripts can help but not for long
+
+Development will also be slow
+
+--
+
+The scripts are not reusable, i.e. you create another API
+
+--
+
+Rewriting scripts with Python helps, but not for long
 
 ---
-# Code-centric deployment
+# Pythonic deployment
 
 --
 
-The opposite of config-centric deployment.
+The opposite of config-centric deployment
 
 --
 
-Config is allowed but on the highest level.
+Configuration only on the highest level, even that can be dynamic
 
 --
 
-Any "script" written can easily be packaged as library and reused.
+Any "script" written can easily be packaged as library and reused
 
 ---
 # Let's start
 
-Clone the repo:
 
-```console
+```bash
+# Clone the repo and create virtual env
 $ git clone git@github.com:bachew/distmono.git
 $ cd distmono
+$ bin/dmn --help  # first run creates virtual env, takes < 20s
 ```
 
 --
 
-Configure credentials:
 
-TODO
+```bash
+# Configure AWS credentials
+$ cat > env.sh
+export AWS_ACCESS_KEY_ID="xxxxxxxxxxxxxxxxxxxx"
+export AWS_SECRET_ACCESS_KEY="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+```
+
+--
+
+```bash
+# Clone config and customize
+$ cd project-env
+$ cp api.py api-demo.py
+$ edit api-demo.py  # more on config next slide
+$ cd ..
+```
+
+--
+
+```bash
+# Deploy, takes roughly 3 minutes
+$ bin/dmn -p project-env/api-demo.py build
+```
+
+---
+
+# Configuration
+
+Let's take a closer look at `project-env/api-demo.py`
+
+--
+
+```python
+def get_project():
+    return ApiProject(env=get_env())
+```
+
+`ApiProject` class decides what and how to build
+
+--
+
+```python
+def get_env():
+    return {
+        'namespace': 'ew1-distmono-demo',
+        'region': 'eu-west-1',
+    }
+```
+
+- Environment is a "configuration" for a project
+
+--
+- A project can have multiple environments
+  - E.g. one env for each developer
+
+---
+
+# Project
+
+A project consists of deployables and their dependencies.
+
+```python
+
+class ApiProject(Project):
+    def get_deployables(self):
+        return {
+            'api-stack': ApiStack,
+            'function-stack': FunctionStack,
+            'function-code': FunctionCode,
+            'layer-code': LayerCode,
+            'buckets-stack': BucketsStack,
+            'access-stack': AccessStack,
+        }
+
+    def get_dependencies(self):
+        return {
+            'api-stack': ['function-stack', 'access-stack'],
+            'function-stack': ['function-code', 'layer-code', 'access-stack'],
+            'function-code': 'buckets-stack',
+            'layer-code': 'buckets-stack',
+            'buckets-stack': 'access-stack',
+        }
+```
+
+---
+
+# Dependencies
+
+<table><tr>
+  <td><img src="img/deps-1.png"></td>
+  <td style="vertical-align:top">
+    <ol>
+      <li>Target is api-stack</li>
+    </ol>
+  </td>
+</tr></table>
+
+---
+
+# Dependencies
+
+<table><tr>
+  <td><img src="img/deps-2.png"></td>
+  <td style="vertical-align:top">
+    <ol>
+      <li>Target is api-stack</li>
+      <li>But starts from bottom, deploy <code>CodeBucket</code></li>
+    </ol>
+  </td>
+</tr></table>
+
+---
+
+```bash
+# Takes roughly 2 minutes
+$ bin/dmn -p project-env/api-demo.py destroy
+```
     </textarea>
     <script src="https://remarkjs.com/downloads/remark-latest.min.js">
     </script>

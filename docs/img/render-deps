@@ -1,0 +1,3 @@
+#!/bin/bash
+
+dot -Tpng deps.dot -Gsize=4,3\! -Gdpi=100 > deps-2.png

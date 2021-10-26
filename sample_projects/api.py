@@ -29,6 +29,10 @@ import urllib.request
 
 
 class ApiProject(Project):
+    def __init__(self, **kwargs):
+        kwargs['project_dir'] = Path(__file__).parents[1]
+        super().__init__(**kwargs)
+
     def get_deployables(self):
         return {
             'api-stack': ApiStack,
@@ -49,7 +53,7 @@ class ApiProject(Project):
             'function-stack': ['function-code', 'layer-code', 'access-stack'],
             'function-code': 'buckets-stack',
             'layer-code': 'buckets-stack',
-            'buckets-stack': 'access-stack',
+            # 'buckets-stack': 'access-stack',
 
             'call-api': 'api-stack',
             'invoke-function': 'function-stack',

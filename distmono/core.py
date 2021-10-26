@@ -3,7 +3,6 @@ from cached_property import cached_property
 from distmono.exceptions import (
     CircularDependencyError,
     ConfigError,
-    StackDoesNotExistError,
 )
 from distmono.util import BotoHelper, sh
 from marshmallow import Schema, fields, ValidationError
@@ -217,7 +216,7 @@ class Context:
     @classmethod
     def create(cls, project, target, input):
         env = deepcopy(project.env)
-        tdir = project.temp_dir
+        tdir = project.temp_dir / 'namespace' / env['namespace']
         return Context(
             project=project,
             env=env,

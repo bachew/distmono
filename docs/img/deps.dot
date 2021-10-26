@@ -1,0 +1,7 @@
+digraph {
+    node [shape=rectangle]
+    "buckets-stack" [color=red]
+    "api-stack" -> {"function-stack", "access-stack"}
+    "function-stack" -> {"function-code", "layer-code", "access-stack"}
+    {"function-code", "layer-code"} -> "buckets-stack"
+}
