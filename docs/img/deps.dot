@@ -1,7 +1,12 @@
 digraph {
     node [shape=rectangle]
-    "buckets-stack" [color=red]
-    "api-stack" -> {"function-stack", "access-stack"}
-    "function-stack" -> {"function-code", "layer-code", "access-stack"}
-    {"function-code", "layer-code"} -> "buckets-stack"
+    // "api-stack" -> {"function-stack", "access-stack"}
+    "api-stack" -> {"function-stack"}
+    // "function-stack" -> {"function-code", "layer-code", "access-stack"}
+    // {"function-code", "layer-code"} -> "buckets-stack"
+    // "api-stack" [color=red penwidth=2]
+    node [color=red penwidth=2]
+    "test" -> {"invoke-function", "call-api"}
+    "invoke-function" -> "function-stack"
+    "call-api" -> "api-stack"
 }

@@ -44,7 +44,8 @@ class ApiProject(Project):
 
             'call-api': CallApi,
             'invoke-function': InvokeFunction,
-            'test': SimpleTest,
+            # 'test': SimpleTest,
+            'test': Deployable,
         }
 
     def get_dependencies(self):
@@ -57,7 +58,8 @@ class ApiProject(Project):
 
             'call-api': 'api-stack',
             'invoke-function': 'function-stack',
-            'test': 'buckets-stack',
+            # 'test': 'buckets-stack',
+            'test': ['invoke-function', 'call-api'],
         }
 
     def get_default_build_target(self):
@@ -251,6 +253,7 @@ class Code(Deployable):
         zip_file = Path('code.zip')
         self.zip(zip_file.stem)
         zip_hash = self.file_sha256(zip_file)
+        sh.print("TODO: don't upload if already uploaded")
         self.upload_zip_file(zip_file, zip_hash)
         zip_file.replace(self.out_zip_file)
         self.out_zip_hash_file.write_text(zip_hash)
@@ -318,7 +321,7 @@ class FunctionCode(Code):
 
 class LayerCode(Code):
     def zip(self, stem):
-        # TODO: move to build dir, download requirements
+        # TODO: move to build dir, download libraries from requirements etc
         layer_dir = self.code_base_dir / 'layer'
         shutil.make_archive(stem, 'zip', layer_dir, 'python')
 
@@ -417,7 +420,6 @@ class AccessStack(Stack):
         return PolicyDocument(
             Version='2012-10-17',
             Statement=statement)
-
 
 
 class CallApi(Deployable):

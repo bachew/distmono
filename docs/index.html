@@ -36,17 +36,19 @@ Slides made with [github.com/gnab/remark](https://github.com/gnab/remark)
 # What is the problem?
 
 --
-Let's begin with a simple and common use case:
+Let's illustrate with a simple but common use case
+
+A simple REST API backed by Lambda function:
 
 ![components.png](img/components.png)
 
 ---
-# Config-centric deployment
+# Common deployment method
 
-The promises of config-centric deployment:
+Use a popular deployment tool that:
 
 --
-- Easy to configure:
+- is easy to configure:
 
 ```yaml
 namespace: ${namespace}
@@ -57,14 +59,14 @@ stacks:
 ```
 
 --
-- A command to deploy everything:
+- has a command to deploy everything:
 
 ```bash
 $ stacker build env.yaml config.yaml
 ```
 
 --
-- Another command to undeploy all:
+- and another command to undeploy all:
 
 ```bash
 $ stacker destroy env.yaml config.yaml
@@ -92,7 +94,7 @@ The order of work should be:
 
 --
 
-Changes required...
+Some changes are required...
 
 ---
 # Config changes
@@ -112,6 +114,8 @@ stacks:
     template_path: templates/code-bucket.yaml
 ```
 
+So that `CodeBucket` can be deployed first
+
 ---
 # Deployment script changes
 
@@ -121,6 +125,7 @@ stacker build env.yaml config.yaml -t code-bucket
 ```
 
 --
+
 ```bash
 # Zip function code and upload to the bucket
 cd code
@@ -135,13 +140,13 @@ aws s3 cp code.zip "$code_s3_path"
 
 --
 ```bash
-# Deploy api template to use the uploaded code
+# Update config and deploy the rest
 ./update-env-code-zip env.yaml "$code_s3_path"
 stacker build env.yaml config.yaml -t api
 ```
 
 ---
-# It's a problem
+# This is a problem
 
 --
 Remember this is a very simple use case
@@ -160,26 +165,26 @@ Development will also be slow
 
 --
 
-The scripts are not reusable, i.e. you create another API
+The scripts are not reusable, i.e. can't easily use it for another API
 
 --
 
 Rewriting scripts with Python helps, but not for long
 
 ---
-# Pythonic deployment
+# A better way to deploy
 
 --
 
-The opposite of config-centric deployment
+Start from Python code instead of static YAML config
 
 --
 
-Configuration only on the highest level, even that can be dynamic
+Expose settings to configuration only when needed
 
 --
 
-Any "script" written can easily be packaged as library and reused
+Polish and package common solutions to be reused
 
 ---
 # Let's start
@@ -244,11 +249,14 @@ def get_env():
     }
 ```
 
-- Environment is a "configuration" for a project
+Environment is a "configuration" for a project
 
 --
-- A project can have multiple environments
-  - E.g. one env for each developer
+
+A project can have multiple environments, for example:
+
+- One env for each developer
+- One for CI
 
 ---
 
@@ -286,9 +294,7 @@ class ApiProject(Project):
 <table><tr>
   <td><img src="img/deps-1.png"></td>
   <td style="vertical-align:top">
-    <ol>
-      <li>Target is api-stack</li>
-    </ol>
+    <p>Target is <code>api-stack</code></p>
   </td>
 </tr></table>
 
@@ -299,12 +305,111 @@ class ApiProject(Project):
 <table><tr>
   <td><img src="img/deps-2.png"></td>
   <td style="vertical-align:top">
+    <p>Dependencies must be deployed first</p>
     <ol>
-      <li>Target is api-stack</li>
-      <li>But starts from bottom, deploy <code>CodeBucket</code></li>
+      <li><code>CodeBucket</code> in <code>buckets-stack</code></li>
     </ol>
   </td>
 </tr></table>
+
+---
+
+# Dependencies
+
+<table><tr>
+  <td><img src="img/deps-3.png"></td>
+  <td style="vertical-align:top">
+    <p>&nbsp;</p>
+    <ol>
+      <li><code>CodeBucket</code> in <code>buckets-stack</code></li>
+      <li><code>AppRole</code> in <code>access-stack</code></li>
+    </ol>
+  </td>
+</tr></table>
+
+---
+
+# Dependencies
+
+<table><tr>
+  <td><img src="img/deps-4.png"></td>
+  <td style="vertical-align:top">
+    <p>&nbsp;</p>
+    <ol>
+      <li><code>CodeBucket</code> in <code>buckets-stack</code></li>
+      <li><code>AppRole</code> in <code>access-stack</code></li>
+      <li>Zip function code and upload to <code>CodeBucket</code></li>
+    </ol>
+  </td>
+</tr></table>
+
+---
+
+# Dependencies
+
+<table><tr>
+  <td><img src="img/deps-5.png"></td>
+  <td style="vertical-align:top">
+    <p>&nbsp;</p>
+    <ol>
+      <li><code>CodeBucket</code> in <code>buckets-stack</code></li>
+      <li><code>AppRole</code> in <code>access-stack</code></li>
+      <li>Zip function code and upload to <code>CodeBucket</code></li>
+      <li>Download and zip libraries, then upload to <code>CodeBucket</code></li>
+    </ol>
+  </td>
+</tr></table>
+
+---
+
+# Dependencies
+
+<table><tr>
+  <td><img src="img/deps-6.png"></td>
+  <td style="vertical-align:top">
+    <p>&nbsp;</p>
+    <ol>
+      <li><code>CodeBucket</code> in <code>buckets-stack</code></li>
+      <li><code>AppRole</code> in <code>access-stack</code></li>
+      <li>Zip function code and upload to <code>CodeBucket</code></li>
+      <li>Download and zip libraries, then upload to <code>CodeBucket</code></li>
+      <li>Deploy Lambda function in <code>function-stack</code> with code from <code>CodeBucket</code></li>
+    </ol>
+  </td>
+</tr></table>
+
+---
+
+# Dependencies
+
+<table><tr>
+  <td><img src="img/deps-7.png"></td>
+  <td style="vertical-align:top">
+    <p>Target deployed, done!</p>
+    <ol>
+      <li><code>CodeBucket</code> in <code>buckets-stack</code></li>
+      <li><code>AppRole</code> in <code>access-stack</code></li>
+      <li>Zip function code and upload to <code>CodeBucket</code></li>
+      <li>Download and zip libraries, then upload to <code>CodeBucket</code></li>
+      <li>Deploy Lambda function in <code>function-stack</code> with code from <code>CodeBucket</code></li>
+      <li>Deploy <code>Api</code> in <code>api-stack</code></li>
+    </ol>
+  </td>
+</tr></table>
+
+--
+
+But how do I know it's working?
+
+---
+
+# Attach tests and run them
+
+![Test](img/deps-test.png)
+
+```bash
+$ bin/dmn -p project-env/api-demo.py build test
+```
 
 ---
 
