@@ -26,14 +26,7 @@ class: center, middle
 Better way to deploy to AWS
 
 ---
-# Before we begin
-
-Everything in [github.com/bachew/distmono](https://github.com/bachew/distmono)
-
-Slides made with [github.com/gnab/remark](https://github.com/gnab/remark)
-
----
-# What is the problem?
+# Simple use case
 
 --
 Let's illustrate with a simple but common use case
@@ -45,7 +38,7 @@ A simple REST API backed by Lambda function:
 ---
 # Common deployment method
 
-Use a popular deployment tool that:
+Use a deployment tool that:
 
 --
 - is easy to configure:
@@ -75,21 +68,14 @@ $ stacker destroy env.yaml config.yaml
 ---
 # Actually it doesn't work
 
---
 ![code-bucket-highlight.png](img/code-bucket-highlight.png)
-
-Remember function code comes from a S3 bucket?
 
 --
 
 The order of work should be:
 
 1. Deploy only `CodeBucket`
-
---
 2. Package code zip and upload to `CodeBucket`
-
---
 3. Deploy the rest
 
 --
@@ -146,45 +132,27 @@ stacker build env.yaml config.yaml -t api
 ```
 
 ---
-# This is a problem
-
---
-Remember this is a very simple use case
+# This is the problem
 
 --
 
-What happens if it's 20x more complex?
+Messy configuration and scripts
 
 --
 
-Deployment is slow, cannot deploy only updated parts
+Deployment is slow
 
 --
 
-Development will also be slow
+Cannot deploy only updated parts during development
 
---
-
-The scripts are not reusable, i.e. can't easily use it for another API
-
---
-
-Rewriting scripts with Python helps, but not for long
 
 ---
 # A better way to deploy
 
 --
 
-Start from Python code instead of static YAML config
-
---
-
-Expose settings to configuration only when needed
-
---
-
-Polish and package common solutions to be reused
+Start with Python code, everything will fall into place
 
 ---
 # Let's start
@@ -196,9 +164,6 @@ $ git clone git@github.com:bachew/distmono.git
 $ cd distmono
 $ bin/dmn --help  # first run creates virtual env, takes < 20s
 ```
-
---
-
 
 ```bash
 # Configure AWS credentials
@@ -213,14 +178,14 @@ export AWS_SECRET_ACCESS_KEY="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 # Clone config and customize
 $ cd project-env
 $ cp api.py api-demo.py
-$ edit api-demo.py  # more on config next slide
+$ edit api-demo.py
 $ cd ..
 ```
 
 --
 
 ```bash
-# Deploy, takes roughly 3 minutes
+# Deploy, takes < 3 minutes
 $ bin/dmn -p project-env/api-demo.py build
 ```
 
@@ -228,7 +193,7 @@ $ bin/dmn -p project-env/api-demo.py build
 
 # Configuration
 
-Let's take a closer look at `project-env/api-demo.py`
+`project-env/api-demo.py`
 
 --
 
@@ -244,19 +209,12 @@ def get_project():
 ```python
 def get_env():
     return {
-        'namespace': 'ew1-distmono-demo',
+        'namespace': 'ew1-distmono-demo',  # prefix for all stack names
         'region': 'eu-west-1',
     }
 ```
 
-Environment is a "configuration" for a project
-
---
-
-A project can have multiple environments, for example:
-
-- One env for each developer
-- One for CI
+Environment is a configuration for a project
 
 ---
 
@@ -397,13 +355,9 @@ class ApiProject(Project):
   </td>
 </tr></table>
 
---
-
-But how do I know it's working?
-
 ---
 
-# Attach tests and run them
+# Test as part of the build
 
 ![Test](img/deps-test.png)
 
@@ -413,10 +367,38 @@ $ bin/dmn -p project-env/api-demo.py build test
 
 ---
 
+# Clean up
+
+Destroy everything:
+
 ```bash
-# Takes roughly 2 minutes
 $ bin/dmn -p project-env/api-demo.py destroy
 ```
+
+---
+
+# Time's up
+
+There are many things left uncovered:
+
+- Using Troposhere to create stack template is more flexible and more maintainable long term
+  - Duplicate templates can easily be eliminated with methods, no copy paste please
+  - CloudFormation has many traps, they can be dealt with more easily, for example:
+     - `sample_projects.api:ApiStack.add_deployment()`
+     - `sample_projects.api:Code.build()`
+     - `sample_projects.api:Code.destroy()`
+- Environment can be strictly validated to make it hard to misconfigure
+  - See `distmono.core:Project.load_env()`
+     - Can override `load_env()` and extend `EnvSchema`
+- Builds are cached, see `tmp/namespace/NAMESPACE/*`
+  - Except `sample_projects.api:Code`, it's incomplete
+
+---
+# The end
+
+Everything in [github.com/bachew/distmono](https://github.com/bachew/distmono)
+
+Slides made with [github.com/gnab/remark](https://github.com/gnab/remark)
     </textarea>
     <script src="https://remarkjs.com/downloads/remark-latest.min.js">
     </script>

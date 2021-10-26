@@ -306,6 +306,7 @@ class Code(Deployable):
         return zip_file.parent / (zip_file.name + '.sha256')
 
     def destroy(self):
+        # XXX: if bucket is not cleared, it can't be deleted
         sh.print(f'Clearing S3 bucket {self.bucket_name!r}')
         s3 = self.boto.resource('s3')
         bucket = s3.Bucket(self.bucket_name)

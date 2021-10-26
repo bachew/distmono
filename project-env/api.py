@@ -7,6 +7,6 @@ def get_project():
 
 def get_env():
     return {
-        'namespace': 'distmono-sample-api',
+        'namespace': 'distmono-sample-api',  # prefix for all stack names
         'region': 'ap-southeast-1',
     }
