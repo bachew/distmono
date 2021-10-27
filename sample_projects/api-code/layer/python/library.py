@@ -1,1 +1,2 @@
-# Just for testing layer
+def hello():
+    return 'Hello from library'

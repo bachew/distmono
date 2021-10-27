@@ -21,22 +21,24 @@
 
 class: center, middle
 
-# Distmono
+# Better way to deploy to AWS
 
-Better way to deploy to AWS
+# <strike>Try microservices architecture</strike>
+
+# <strike>Try AWS App Mesh</strike>
+
+# <strike>Try event-driven architecture</strike>
+
 
 ---
-# Simple use case
-
---
-Let's illustrate with a simple but common use case
+# Simple but common use case
 
 A simple REST API backed by Lambda function:
 
 ![components.png](img/components.png)
 
 ---
-# Common deployment method
+# Common deployment
 
 Use a deployment tool that:
 
@@ -66,16 +68,18 @@ $ stacker destroy env.yaml config.yaml
 ```
 
 ---
-# Actually it doesn't work
+# It's never that simple
 
 ![code-bucket-highlight.png](img/code-bucket-highlight.png)
+
+We need to upload the code in between
 
 --
 
 The order of work should be:
 
 1. Deploy only `CodeBucket`
-2. Package code zip and upload to `CodeBucket`
+2. Zip the code and upload to `CodeBucket`
 3. Deploy the rest
 
 --
@@ -132,27 +136,26 @@ stacker build env.yaml config.yaml -t api
 ```
 
 ---
-# This is the problem
+# The main problems
 
 --
 
-Messy configuration and scripts
-
---
-
-Deployment is slow
+Messy scripts and configuration hacks as project grows
 
 --
 
 Cannot deploy only updated parts during development
-
 
 ---
 # A better way to deploy
 
 --
 
-Start with Python code, everything will fall into place
+Start with code before config
+
+Everything else will fall into place
+
+Code can easily be reused
 
 ---
 # Let's start
@@ -164,6 +167,8 @@ $ git clone git@github.com:bachew/distmono.git
 $ cd distmono
 $ bin/dmn --help  # first run creates virtual env, takes < 20s
 ```
+
+--
 
 ```bash
 # Configure AWS credentials
@@ -202,7 +207,7 @@ def get_project():
     return ApiProject(env=get_env())
 ```
 
-`ApiProject` class decides what and how to build
+A project decides what and how to build
 
 --
 
@@ -214,13 +219,11 @@ def get_env():
     }
 ```
 
-Environment is a configuration for a project
+Environment is a project's configuration
 
 ---
 
 # Project
-
-A project consists of deployables and their dependencies.
 
 ```python
 
@@ -243,6 +246,9 @@ class ApiProject(Project):
             'layer-code': 'buckets-stack',
             'buckets-stack': 'access-stack',
         }
+
+    def get_default_build_target(self):
+        return 'api-stack'
 ```
 
 ---
@@ -252,7 +258,7 @@ class ApiProject(Project):
 <table><tr>
   <td><img src="img/deps-1.png"></td>
   <td style="vertical-align:top">
-    <p>Target is <code>api-stack</code></p>
+    <p>Build default target is <code>api-stack</code></p>
   </td>
 </tr></table>
 
@@ -280,7 +286,7 @@ class ApiProject(Project):
     <p>&nbsp;</p>
     <ol>
       <li><code>CodeBucket</code> in <code>buckets-stack</code></li>
-      <li><code>AppRole</code> in <code>access-stack</code></li>
+      <li><code>AppRole</code> and policies in <code>access-stack</code></li>
     </ol>
   </td>
 </tr></table>
@@ -295,7 +301,7 @@ class ApiProject(Project):
     <p>&nbsp;</p>
     <ol>
       <li><code>CodeBucket</code> in <code>buckets-stack</code></li>
-      <li><code>AppRole</code> in <code>access-stack</code></li>
+      <li><code>AppRole</code> and policies in <code>access-stack</code></li>
       <li>Zip function code and upload to <code>CodeBucket</code></li>
     </ol>
   </td>
@@ -311,9 +317,9 @@ class ApiProject(Project):
     <p>&nbsp;</p>
     <ol>
       <li><code>CodeBucket</code> in <code>buckets-stack</code></li>
-      <li><code>AppRole</code> in <code>access-stack</code></li>
+      <li><code>AppRole</code> and policies in <code>access-stack</code></li>
       <li>Zip function code and upload to <code>CodeBucket</code></li>
-      <li>Download and zip libraries, then upload to <code>CodeBucket</code></li>
+      <li>Download <small>(not done)</small> and zip libraries, then upload to <code>CodeBucket</code></li>
     </ol>
   </td>
 </tr></table>
@@ -328,10 +334,10 @@ class ApiProject(Project):
     <p>&nbsp;</p>
     <ol>
       <li><code>CodeBucket</code> in <code>buckets-stack</code></li>
-      <li><code>AppRole</code> in <code>access-stack</code></li>
+      <li><code>AppRole</code> and policies in <code>access-stack</code></li>
       <li>Zip function code and upload to <code>CodeBucket</code></li>
-      <li>Download and zip libraries, then upload to <code>CodeBucket</code></li>
-      <li>Deploy Lambda function in <code>function-stack</code> with code from <code>CodeBucket</code></li>
+      <li>Download <small>(not done)</small> and zip libraries, then upload to <code>CodeBucket</code></li>
+      <li>Deploy Lambda function in <code>function-stack</code> with code and libraries from <code>CodeBucket</code></li>
     </ol>
   </td>
 </tr></table>
@@ -343,13 +349,13 @@ class ApiProject(Project):
 <table><tr>
   <td><img src="img/deps-7.png"></td>
   <td style="vertical-align:top">
-    <p>Target deployed, done!</p>
+    <p>Done</p>
     <ol>
       <li><code>CodeBucket</code> in <code>buckets-stack</code></li>
-      <li><code>AppRole</code> in <code>access-stack</code></li>
+      <li><code>AppRole</code> and policies in <code>access-stack</code></li>
       <li>Zip function code and upload to <code>CodeBucket</code></li>
-      <li>Download and zip libraries, then upload to <code>CodeBucket</code></li>
-      <li>Deploy Lambda function in <code>function-stack</code> with code from <code>CodeBucket</code></li>
+      <li>Download <small>(not done)</small> and zip libraries, then upload to <code>CodeBucket</code></li>
+      <li>Deploy Lambda function in <code>function-stack</code> with code and libraries from <code>CodeBucket</code></li>
       <li>Deploy <code>Api</code> in <code>api-stack</code></li>
     </ol>
   </td>
@@ -357,7 +363,7 @@ class ApiProject(Project):
 
 ---
 
-# Test as part of the build
+# Testing as part of the build
 
 ![Test](img/deps-test.png)
 
@@ -377,21 +383,19 @@ $ bin/dmn -p project-env/api-demo.py destroy
 
 ---
 
-# Time's up
-
-There are many things left uncovered:
+# More
 
 - Using Troposhere to create stack template is more flexible and more maintainable long term
   - Duplicate templates can easily be eliminated with methods, no copy paste please
   - CloudFormation has many traps, they can be dealt with more easily, for example:
-     - `sample_projects.api:ApiStack.add_deployment()`
-     - `sample_projects.api:Code.build()`
-     - `sample_projects.api:Code.destroy()`
+     - [`sample_projects.api:ApiStack.add_deployment()`](https://github.com/bachew/distmono/blob/master/sample_projects/api.py#L160)
+     - [`sample_projects.api:Code.build()`](https://github.com/bachew/distmono/blob/master/sample_projects/api.py#L252)
+     - [`sample_projects.api:Code.destroy()`](https://github.com/bachew/distmono/blob/master/sample_projects/api.py#L308)
 - Environment can be strictly validated to make it hard to misconfigure
-  - See `distmono.core:Project.load_env()`
+  - See [`distmono.core:Project.load_env()`](https://github.com/bachew/distmono/blob/master/distmono/core.py#L31)
      - Can override `load_env()` and extend `EnvSchema`
 - Builds are cached, see `tmp/namespace/NAMESPACE/*`
-  - Except `sample_projects.api:Code`, it's incomplete
+  - Except [`sample_projects.api:Code`](https://github.com/bachew/distmono/blob/master/sample_projects/api.py#L247), it's incomplete
 
 ---
 # The end

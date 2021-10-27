@@ -1,12 +1,11 @@
 import json
-import library
+import library  # verify that layer code works
 
 
 def handle(event, context):
     return {
         'statusCode': 200,
         'body': json.dumps({
-            'library': library.__file__
+            'message': library.hello()
         }),
-        # 'headers': {}
     }
